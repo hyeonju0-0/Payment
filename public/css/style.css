@@ -246,6 +246,7 @@ textarea { min-height: 68px; resize: vertical; }
 .sheet-backdrop { position: fixed; z-index: 25; }
 .receipt {
   position: relative;
+  z-index: 1;
   width: min(420px, 100%);
   max-height: min(760px, calc(100vh - 40px));
   overflow: auto;
@@ -367,7 +368,9 @@ select {
     bottom: 0;
     top: auto;
     z-index: 30;
-    max-height: 88vh;
+    max-height: min(88vh, 88dvh);
+    overflow: auto;
+    padding-bottom: env(safe-area-inset-bottom);
     border-radius: 18px 18px 0 0;
     transform: translateY(110%);
     transition: transform 0.2s ease;

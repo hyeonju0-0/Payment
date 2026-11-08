@@ -99,19 +99,34 @@ function setQty(id, qty) {
   if (qty <= 0) delete state.cart[id];
   else state.cart[id] = Math.min(99, qty);
   persistCart();
+  if (cartCount() > 0) showError('');
   render();
 }
 
 function showError(message) {
   els.formError.hidden = !message;
   els.formError.textContent = message || '';
+  if (message) els.formError.scrollIntoView({ block: 'nearest' });
+}
+
+function orderServerMessage() {
+  return '이 주소에서는 주문을 저장할 수 없습니다. 서버를 켠 컴퓨터에서 http://127.0.0.1:3000 을 연 뒤 결제해 주세요.';
+}
+
+async function readJson(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(orderServerMessage());
+  }
 }
 
 function setCartOpen(open) {
   els.cart.classList.toggle('open', open);
   els.backdrop.hidden = !open;
   syncLock();
-  if (open) els.name.focus();
+  if (open && !mobileQuery.matches) els.name.focus();
 }
 
 function syncLock() {
@@ -158,7 +173,7 @@ function renderCart() {
   els.total.textContent = won(cartTotal());
   els.fabTotal.textContent = won(cartTotal());
   els.fab.classList.toggle('has-items', count > 0);
-  els.pay.disabled = count === 0 || state.submitting;
+  els.pay.disabled = state.submitting;
   els.pay.textContent = state.submitting ? '접수 중' : '결제하기';
   if (lines.length === 0) {
     els.cartItems.innerHTML = '<p class="empty">메뉴를 먼저 골라 주세요.</p>';
@@ -398,7 +413,7 @@ async function submitOrder(paymentMethod) {
         items: lines.map((item) => ({ id: item.id, qty: item.qty })),
       }),
     });
-    const data = await response.json();
+    const data = await readJson(response);
     if (!response.ok) throw new Error(data.error || '주문을 접수하지 못했습니다.');
     state.cart = {};
     persistCart();
@@ -408,8 +423,10 @@ async function submitOrder(paymentMethod) {
     render();
     watchOrder(data);
   } catch (error) {
+    const raw = error && error.message ? error.message : '';
+    const unreachable = raw === 'Failed to fetch' || raw === 'Load failed' || raw.includes('NetworkError') || raw.includes('not valid JSON');
     els.choiceError.hidden = false;
-    els.choiceError.textContent = error.message || '주문을 접수하지 못했습니다.';
+    els.choiceError.textContent = unreachable || !raw ? orderServerMessage() : raw;
   } finally {
     state.submitting = false;
     els.chooseCash.disabled = false;
