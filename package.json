@@ -1,0 +1,9 @@
+{
+  "name": "ondam-order",
+  "version": "1.0.0",
+  "private": true,
+  "description": "메뉴 주문, 계좌 안내, 관리자 환불 상태",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

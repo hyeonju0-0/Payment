@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3efe6">
+  <title>온담 주문</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='3' fill='%23b8432f'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' fill='white' font-family='sans-serif'%3E온%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/">
+      <span class="seal" aria-hidden="true">온</span>
+      <span>
+        <strong class="brand-name">온담</strong>
+        <small class="brand-sub">오늘의 한 끼</small>
+      </span>
+    </a>
+    <a class="header-link" href="/admin">관리자</a>
+  </header>
+
+  <main class="layout">
+    <section class="menu-panel">
+      <div class="hero">
+        <p class="eyebrow">주문</p>
+        <h1>메뉴를 고르고 장바구니에 담으세요</h1>
+        <p>결제하기에서 현금 또는 계좌이체를 고릅니다. 계좌번호는 계좌이체를 고른 경우에만 나타납니다.</p>
+      </div>
+      <div class="chips" id="categories" role="tablist" aria-label="메뉴 분류"></div>
+      <div class="grid" id="menu">
+        <p class="empty">메뉴를 불러오는 중입니다.</p>
+      </div>
+    </section>
+
+    <aside class="cart" id="cart" aria-labelledby="cartTitle">
+      <div class="cart-head">
+        <h2 id="cartTitle">장바구니 <span class="count-badge" id="cartCount">0</span></h2>
+        <button type="button" class="cart-close" id="cartClose">닫기</button>
+      </div>
+      <div class="cart-items" id="cartItems"></div>
+      <div class="cart-foot">
+        <label class="field">
+          <span>주문자 이름</span>
+          <input id="customerName" name="customerName" maxlength="30" autocomplete="name" placeholder="입금자명">
+          <small>계좌이체라면 입금자명과 같게 적어 주세요.</small>
+        </label>
+        <label class="field">
+          <span>요청 사항</span>
+          <textarea id="memo" name="memo" maxlength="80" placeholder="선택 사항"></textarea>
+        </label>
+        <div class="total-row">
+          <span>합계</span>
+          <strong id="total">0원</strong>
+        </div>
+        <p class="form-error" id="formError" hidden></p>
+        <button type="button" class="btn primary" id="pay" disabled>결제하기</button>
+      </div>
+    </aside>
+  </main>
+
+  <button type="button" class="cart-fab" id="cartFab">
+    <span>장바구니 <strong id="fabCount">0</strong></span>
+    <span id="fabTotal">0원</span>
+  </button>
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+
+  <div class="modal" id="choiceModal" hidden>
+    <div class="modal-backdrop" data-close-choice></div>
+    <section class="receipt" role="dialog" aria-modal="true" aria-labelledby="choiceTitle">
+      <p class="receipt-kicker">결제</p>
+      <h2 id="choiceTitle">결제 방법</h2>
+      <p class="choice-lead">현금은 계좌 없이 접수됩니다. 계좌이체는 계좌번호를 보여 줍니다.</p>
+      <div class="method-row">
+        <button type="button" class="btn ghost" id="chooseCash">현금</button>
+        <button type="button" class="btn primary" id="chooseTransfer">계좌이체</button>
+      </div>
+      <p class="form-error" id="choiceError" hidden></p>
+      <button type="button" class="btn ghost" id="closeChoice">닫기</button>
+    </section>
+  </div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <section class="receipt" role="dialog" aria-modal="true" aria-labelledby="receiptTitle">
+      <div id="waitView">
+        <p class="receipt-kicker" id="waitKicker">주문이 접수되었습니다</p>
+        <h2 id="receiptTitle">입금을 확인하고 있습니다</h2>
+        <p class="choice-lead" id="waitDetail"></p>
+      </div>
+      <div id="paidView" hidden>
+        <p class="receipt-kicker">입금 완료</p>
+        <h2 id="paidTitle" tabindex="-1">입금이 완료되었습니다</h2>
+        <p class="choice-lead" id="paidDetail"></p>
+      </div>
+      <p class="receipt-order" id="receiptOrder"></p>
+      <dl class="receipt-meta" id="receiptMeta"></dl>
+      <ul class="receipt-items" id="receiptItems"></ul>
+      <div id="accountBlock">
+        <hr class="dashed">
+        <p class="account-bank" id="accountBank"></p>
+        <p class="account-number" id="accountNumber"></p>
+        <p class="account-holder" id="accountHolder"></p>
+        <button type="button" class="btn primary" id="copyAccount">계좌번호 복사</button>
+        <p class="copy-status" id="copyStatus" role="status"></p>
+      </div>
+      <div class="total-row receipt-total">
+        <span id="amountLabel">입금액</span>
+        <strong id="receiptTotal"></strong>
+      </div>
+      <button type="button" class="btn ghost" id="closeModal">메뉴로 돌아가기</button>
+    </section>
+  </div>
+
+  <noscript>
+    <p class="noscript">메뉴를 주문하려면 브라우저에서 자바스크립트를 켜 주세요.</p>
+  </noscript>
+  <script src="/js/order.js"></script>
+</body>
+</html>

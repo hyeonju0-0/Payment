@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3efe6">
+  <title>온담 주문 관리</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='3' fill='%23b8432f'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' fill='white' font-family='sans-serif'%3E온%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/admin">
+      <span class="seal" aria-hidden="true">온</span>
+      <span>
+        <strong class="brand-name">온담</strong>
+        <small class="brand-sub">주문 관리</small>
+      </span>
+    </a>
+    <a class="header-link" href="/">주문 화면</a>
+  </header>
+
+  <main class="admin">
+    <div class="hero admin-hero">
+      <p class="eyebrow">관리자</p>
+      <h1>입금을 확인하고 완료로 바꿉니다</h1>
+      <p>입금 완료로 바꾸면 주문 화면에 완료 메시지가 나타납니다. 주문을 직접 추가할 수도 있습니다.</p>
+    </div>
+
+    <section class="stats" aria-label="주문 요약">
+      <article class="stat"><span>입금 대기</span><strong id="statPending">0</strong></article>
+      <article class="stat"><span>입금 완료</span><strong id="statPaid">0</strong></article>
+      <article class="stat"><span>환불</span><strong id="statRefunded">0</strong></article>
+      <article class="stat"><span>대기 금액</span><strong id="statAmount">0원</strong></article>
+    </section>
+
+    <div class="toolbar">
+      <div class="chips" id="filters" role="tablist" aria-label="상태 필터">
+        <button type="button" class="chip active" data-filter="all" aria-pressed="true">전체</button>
+        <button type="button" class="chip" data-filter="pending" aria-pressed="false">입금 대기</button>
+        <button type="button" class="chip" data-filter="paid" aria-pressed="false">입금 완료</button>
+        <button type="button" class="chip" data-filter="refunded" aria-pressed="false">환불</button>
+      </div>
+      <div class="toolbar-end">
+        <input class="search" id="search" type="search" placeholder="이름 또는 주문번호" aria-label="주문 검색">
+        <button type="button" class="btn ghost compact" id="toggleComposer">주문 추가</button>
+        <button type="button" class="btn ghost compact" id="refresh">새로고침</button>
+      </div>
+    </div>
+    <p class="form-error" id="adminError" hidden></p>
+    <section class="order composer" id="composer" hidden>
+      <h2>직접 주문 추가</h2>
+      <label class="field">
+        <span>주문자 이름</span>
+        <input id="addName" maxlength="30" autocomplete="name" placeholder="이름">
+      </label>
+      <label class="field">
+        <span>요청 사항</span>
+        <textarea id="addMemo" maxlength="80" placeholder="선택 사항"></textarea>
+      </label>
+      <div id="addLines"></div>
+      <button type="button" class="btn ghost compact" id="addLine">메뉴 줄 추가</button>
+      <span class="field-label">결제 방법</span>
+      <div class="method-row">
+        <button type="button" class="btn ghost compact" id="addCash" data-add-method="cash">현금</button>
+        <button type="button" class="btn ghost compact" id="addTransfer" data-add-method="transfer">계좌이체</button>
+      </div>
+      <p class="form-error" id="addError" hidden></p>
+      <div class="confirm-actions">
+        <button type="button" class="btn ghost compact" id="addCancel">취소</button>
+        <button type="button" class="btn primary compact" id="addSubmit">주문 등록</button>
+      </div>
+    </section>
+    <div class="orders" id="orders">
+      <p class="empty">주문을 불러오는 중입니다.</p>
+    </div>
+  </main>
+  <script src="/js/admin.js"></script>
+</body>
+</html>
