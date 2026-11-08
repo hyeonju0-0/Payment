@@ -189,16 +189,23 @@ function render() {
   renderOrders();
 }
 
+function ordersUnavailable() {
+  return '주문 서버에 연결하지 못했습니다. 이 컴퓨터에서 서버를 켠 뒤 http://127.0.0.1:3000/admin 을 여세요.';
+}
+
+async function readJson(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(ordersUnavailable());
+  }
+}
+
 async function load() {
   try {
     const response = await fetch('/api/orders', { cache: 'no-store' });
-    const text = await response.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error('주문 목록을 불러오지 못했습니다.');
-    }
+    const data = await readJson(response);
     if (!response.ok) throw new Error(data.error || '주문을 불러오지 못했습니다.');
     const signature = JSON.stringify(data);
     if (signature === state.signature) return;
@@ -220,7 +227,7 @@ async function load() {
   } catch (error) {
     showError(error.message || '주문을 불러오지 못했습니다.');
     if (state.orders.length === 0) {
-      els.orders.innerHTML = '<p class="empty">주문 목록을 불러오지 못했습니다.</p>';
+      els.orders.innerHTML = `<p class="empty">${esc(ordersUnavailable())}</p>`;
     }
   }
 }
@@ -299,7 +306,7 @@ async function submitComposer() {
         items,
       }),
     });
-    const data = await response.json();
+    const data = await readJson(response);
     if (!response.ok) throw new Error(data.error || '주문을 추가하지 못했습니다.');
     els.addName.value = '';
     els.addMemo.value = '';
@@ -323,7 +330,7 @@ async function applyStatus(id) {
   renderOrders();
   try {
     const response = await fetch(`/api/orders/${id}/${statusPath(action)}`, { method: 'POST' });
-    const data = await response.json();
+    const data = await readJson(response);
     if (!response.ok) throw new Error(data.error || '상태를 바꾸지 못했습니다.');
     state.confirmId = null;
     state.confirmAction = null;
