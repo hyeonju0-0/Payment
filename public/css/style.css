@@ -331,7 +331,7 @@ textarea { min-height: 68px; resize: vertical; }
 .composer { display: grid; gap: 12px; margin-top: 16px; }
 .composer h2 { margin: 0; }
 .composer[hidden] { display: none; }
-.line-edit { display: grid; grid-template-columns: minmax(0, 1fr) 88px auto; gap: 8px; align-items: center; }
+.line-edit { display: grid; grid-template-columns: minmax(0, 1fr) 88px; gap: 8px; align-items: center; }
 select {
   width: 100%;
   border: 1px solid var(--line);

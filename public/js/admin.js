@@ -9,8 +9,7 @@ const state = {
   confirmAction: null,
   busy: false,
   signature: '',
-  draft: [],
-  draftKey: 1,
+  qty: {},
   addMethod: '',
   adding: false,
 };
@@ -193,7 +192,13 @@ function render() {
 async function load() {
   try {
     const response = await fetch('/api/orders', { cache: 'no-store' });
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error('주문 목록을 불러오지 못했습니다.');
+    }
     if (!response.ok) throw new Error(data.error || '주문을 불러오지 못했습니다.');
     const signature = JSON.stringify(data);
     if (signature === state.signature) return;
@@ -214,6 +219,9 @@ async function load() {
     render();
   } catch (error) {
     showError(error.message || '주문을 불러오지 못했습니다.');
+    if (state.orders.length === 0) {
+      els.orders.innerHTML = '<p class="empty">주문 목록을 불러오지 못했습니다.</p>';
+    }
   }
 }
 
@@ -222,30 +230,30 @@ function showAddError(message) {
   els.addError.textContent = message || '';
 }
 
-function renderDraft() {
-  const options = state.menu.map((item) => `<option value="${esc(item.id)}">${esc(item.name)} · ${won(item.price)}</option>`).join('');
-  els.addLines.innerHTML = state.draft.map((line) => `
-    <div class="line-edit">
-      <select data-draft-menu="${line.key}" aria-label="메뉴">
-        <option value="">메뉴 선택</option>
-        ${options}
-      </select>
-      <input data-draft-qty="${line.key}" type="number" min="1" max="99" value="${line.qty}" aria-label="수량">
-      <button type="button" class="text-btn" data-draft-remove="${line.key}">삭제</button>
-    </div>
-  `).join('');
-  state.draft.forEach((line) => {
-    const select = els.addLines.querySelector(`[data-draft-menu="${line.key}"]`);
-    if (select) select.value = line.id;
+function readQty() {
+  els.addLines.querySelectorAll('[data-menu-qty]').forEach((input) => {
+    const qty = Number(input.value);
+    state.qty[input.dataset.menuQty] = Number.isInteger(qty) ? Math.min(99, Math.max(0, qty)) : 0;
   });
+}
+
+function renderDraft() {
+  readQty();
+  if (state.menu.length === 0) {
+    els.addLines.innerHTML = '<p class="empty">메뉴를 불러오지 못했습니다.</p>';
+  } else {
+    els.addLines.innerHTML = state.menu.map((item) => `
+      <label class="line-edit">
+        <span>${esc(item.name)} · ${won(item.price)}</span>
+        <input data-menu-qty="${esc(item.id)}" type="number" min="0" max="99" value="${state.qty[item.id] || 0}" aria-label="${esc(item.name)} 수량">
+      </label>
+    `).join('');
+  }
   document.getElementById('addCash').classList.toggle('selected', state.addMethod === 'cash');
   document.getElementById('addTransfer').classList.toggle('selected', state.addMethod === 'transfer');
 }
 
 function openComposer() {
-  if (state.draft.length === 0) {
-    state.draft = [{ key: state.draftKey++, id: '', qty: 1 }];
-  }
   els.composer.hidden = false;
   renderDraft();
   els.addName.focus();
@@ -258,19 +266,11 @@ function closeComposer() {
 
 async function submitComposer() {
   if (state.adding) return;
-  state.draft.forEach((line) => {
-    const select = els.addLines.querySelector(`[data-draft-menu="${line.key}"]`);
-    const qtyInput = els.addLines.querySelector(`[data-draft-qty="${line.key}"]`);
-    if (select) line.id = select.value;
-    if (qtyInput) {
-      const qty = Number(qtyInput.value);
-      line.qty = Number.isInteger(qty) && qty >= 1 ? Math.min(99, qty) : 1;
-    }
-  });
+  readQty();
   const customerName = els.addName.value.trim();
-  const items = state.draft
-    .filter((line) => line.id)
-    .map((line) => ({ id: line.id, qty: line.qty }));
+  const items = state.menu
+    .filter((item) => state.qty[item.id] > 0)
+    .map((item) => ({ id: item.id, qty: state.qty[item.id] }));
   if (!customerName) {
     showAddError('주문자 이름을 입력해 주세요.');
     els.addName.focus();
@@ -304,7 +304,7 @@ async function submitComposer() {
     els.addName.value = '';
     els.addMemo.value = '';
     state.addMethod = '';
-    state.draft = [{ key: state.draftKey++, id: '', qty: 1 }];
+    state.qty = {};
     closeComposer();
     state.signature = '';
     await load();
@@ -384,30 +384,6 @@ document.body.addEventListener('click', (event) => {
   }
 });
 
-els.addLines.addEventListener('change', (event) => {
-  const menuSelect = event.target.closest('[data-draft-menu]');
-  const qtyInput = event.target.closest('[data-draft-qty]');
-  if (menuSelect) {
-    const line = state.draft.find((item) => String(item.key) === menuSelect.dataset.draftMenu);
-    if (line) line.id = menuSelect.value;
-  }
-  if (qtyInput) {
-    const line = state.draft.find((item) => String(item.key) === qtyInput.dataset.draftQty);
-    const qty = Number(qtyInput.value);
-    if (line) line.qty = Number.isInteger(qty) ? Math.min(99, Math.max(1, qty)) : 1;
-  }
-});
-els.addLines.addEventListener('click', (event) => {
-  const remove = event.target.closest('[data-draft-remove]');
-  if (!remove) return;
-  state.draft = state.draft.filter((item) => String(item.key) !== remove.dataset.draftRemove);
-  if (state.draft.length === 0) state.draft = [{ key: state.draftKey++, id: '', qty: 1 }];
-  renderDraft();
-});
-document.getElementById('addLine').addEventListener('click', () => {
-  state.draft.push({ key: state.draftKey++, id: '', qty: 1 });
-  renderDraft();
-});
 document.getElementById('toggleComposer').addEventListener('click', () => {
   if (els.composer.hidden) openComposer();
   else closeComposer();
@@ -425,13 +401,24 @@ window.setInterval(() => {
   load();
 }, 5000);
 
-fetch('menu.json')
-  .then((response) => response.ok ? response.json() : [])
-  .then((menu) => {
-    state.menu = Array.isArray(menu) ? menu : [];
-    if (!els.composer.hidden) renderDraft();
-  })
-  .catch(() => {});
+async function loadMenu() {
+  for (const url of ['menu.json', '/api/menu']) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) continue;
+      const menu = await response.json();
+      if (!Array.isArray(menu) || menu.length === 0) continue;
+      state.menu = menu;
+      if (!els.composer.hidden) renderDraft();
+      return;
+    } catch {
+      // 다음 주소에서 다시 시도합니다.
+    }
+  }
+  if (!els.composer.hidden) renderDraft();
+}
+
+loadMenu();
 
 fetch('meta.json')
   .then((response) => response.ok ? response.json() : null)
