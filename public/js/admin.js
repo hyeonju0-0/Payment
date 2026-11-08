@@ -425,7 +425,7 @@ window.setInterval(() => {
   load();
 }, 5000);
 
-fetch('/api/menu')
+fetch('menu.json')
   .then((response) => response.ok ? response.json() : [])
   .then((menu) => {
     state.menu = Array.isArray(menu) ? menu : [];
@@ -433,7 +433,7 @@ fetch('/api/menu')
   })
   .catch(() => {});
 
-fetch('/api/meta')
+fetch('meta.json')
   .then((response) => response.ok ? response.json() : null)
   .then((meta) => {
     if (!meta?.shopName) return;

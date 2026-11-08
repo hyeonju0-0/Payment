@@ -470,7 +470,7 @@ async function init() {
   mobileQuery.addEventListener('change', syncLock);
 
   try {
-    const [metaRes, menuRes] = await Promise.all([fetch('/api/meta'), fetch('/api/menu')]);
+    const [metaRes, menuRes] = await Promise.all([fetch('meta.json'), fetch('menu.json')]);
     if (!menuRes.ok) throw new Error('메뉴를 불러오지 못했습니다.');
     const meta = metaRes.ok ? await metaRes.json() : null;
     if (meta?.shopName) {

@@ -409,7 +409,16 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+function writePublicData() {
+  fs.writeFileSync(path.join(PUBLIC_DIR, 'menu.json'), JSON.stringify(config.menu));
+  fs.writeFileSync(path.join(PUBLIC_DIR, 'meta.json'), JSON.stringify({
+    shopName: config.shopName,
+    tagline: config.tagline,
+  }));
+}
+
 assertConfig();
+writePublicData();
 pool.query('SELECT 1').then(() => {
   server.listen(PORT, '127.0.0.1', () => {
     console.log(`주문 화면  http://127.0.0.1:${PORT}`);
