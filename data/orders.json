@@ -176,5 +176,53 @@
     "paidAt": "2026-11-08T14:25:00.679Z",
     "refundedAt": "2026-11-08T14:25:11.206Z",
     "account": null
+  },
+  {
+    "id": "OD-20261109-0001",
+    "createdAt": "2026-11-08T15:30:47.942Z",
+    "customerName": "-7856",
+    "memo": "",
+    "items": [
+      {
+        "id": "kimchi-jjigae",
+        "name": "김치찌개 정식",
+        "price": 9500,
+        "qty": 1
+      }
+    ],
+    "total": 9500,
+    "paymentMethod": "cash",
+    "source": "customer",
+    "status": "pending",
+    "paidAt": null,
+    "receivedAt": null,
+    "refundedAt": null,
+    "account": null
+  },
+  {
+    "id": "OD-20261109-0002",
+    "createdAt": "2026-11-08T15:30:57.602Z",
+    "customerName": "-7hh",
+    "memo": "",
+    "items": [
+      {
+        "id": "kimchi-jjigae",
+        "name": "김치찌개 정식",
+        "price": 9500,
+        "qty": 1
+      }
+    ],
+    "total": 9500,
+    "paymentMethod": "transfer",
+    "source": "customer",
+    "status": "received",
+    "paidAt": "2026-11-08T15:31:23.771Z",
+    "receivedAt": "2026-11-08T15:31:29.926Z",
+    "refundedAt": null,
+    "account": {
+      "bank": "카카오뱅크",
+      "number": "3333-12-3456789",
+      "holder": "온담식당"
+    }
   }
 ]

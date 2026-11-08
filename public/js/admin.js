@@ -21,6 +21,7 @@ const els = {
   search: document.getElementById('search'),
   statPending: document.getElementById('statPending'),
   statPaid: document.getElementById('statPaid'),
+  statReceived: document.getElementById('statReceived'),
   statRefunded: document.getElementById('statRefunded'),
   statAmount: document.getElementById('statAmount'),
   composer: document.getElementById('composer'),
@@ -74,14 +75,44 @@ function methodLabel(order) {
 
 function statusView(order) {
   if (order.status === 'paid') return { className: 'paid', label: '입금 완료' };
+  if (order.status === 'received') return { className: 'received', label: '수령 완료' };
   if (order.status === 'refunded') return { className: 'refund', label: '환불' };
   return { className: 'wait', label: '입금 대기' };
+}
+
+function confirmCopy(action) {
+  if (action === 'paid') {
+    return {
+      label: '입금 확정',
+      text: '입금을 확인했습니까? 주문 화면에 완료 메시지가 표시됩니다.',
+      kind: 'primary',
+    };
+  }
+  if (action === 'received') {
+    return {
+      label: '수령 확정',
+      text: '손님에게 전달했습니까? 주문 화면에 수령 완료가 표시됩니다.',
+      kind: 'primary',
+    };
+  }
+  return {
+    label: '환불 확정',
+    text: '이 주문을 환불 상태로 바꿀까요?',
+    kind: 'danger',
+  };
+}
+
+function statusPath(action) {
+  if (action === 'paid') return 'paid';
+  if (action === 'received') return 'received';
+  return 'refund';
 }
 
 function renderStats() {
   const pending = state.orders.filter((order) => order.status === 'pending');
   els.statPending.textContent = String(pending.length);
   els.statPaid.textContent = String(state.orders.filter((order) => order.status === 'paid').length);
+  els.statReceived.textContent = String(state.orders.filter((order) => order.status === 'received').length);
   els.statRefunded.textContent = String(state.orders.filter((order) => order.status === 'refunded').length);
   els.statAmount.textContent = won(pending.reduce((sum, order) => sum + order.total, 0));
 }
@@ -110,30 +141,28 @@ function renderOrders() {
     const items = order.items.map((item) => `
       <li><span>${esc(item.name)} × ${item.qty}</span><span>${won(item.price * item.qty)}</span></li>
     `).join('');
-    const confirmLabel = state.confirmAction === 'paid' ? '입금 확정' : '환불 확정';
-    const confirmText = state.confirmAction === 'paid'
-      ? '입금을 확인했습니까? 주문 화면에 완료 메시지가 표시됩니다.'
-      : '이 주문을 환불 상태로 바꿀까요?';
+    const confirm = confirmCopy(state.confirmAction);
     const action = confirming
       ? `<div class="confirm-box">
-          <p>${confirmText}</p>
+          <p>${confirm.text}</p>
           <div class="confirm-actions">
             <button type="button" class="btn ghost compact" data-cancel-action>돌아가기</button>
-            <button type="button" class="btn ${state.confirmAction === 'paid' ? 'primary' : 'danger'} compact" data-confirm-id="${esc(order.id)}" ${state.busy ? 'disabled' : ''}>${state.busy ? '변경 중' : confirmLabel}</button>
+            <button type="button" class="btn ${confirm.kind} compact" data-confirm-id="${esc(order.id)}" ${state.busy ? 'disabled' : ''}>${state.busy ? '변경 중' : confirm.label}</button>
           </div>
         </div>`
       : `<div class="order-actions">
           ${order.status === 'pending' ? `<button type="button" class="btn primary compact" data-ask-paid="${esc(order.id)}">입금 완료</button>` : ''}
+          ${order.status === 'paid' ? `<button type="button" class="btn primary compact" data-ask-received="${esc(order.id)}">수령 완료</button>` : ''}
           ${order.status !== 'refunded' ? `<button type="button" class="btn ghost compact" data-ask-refund="${esc(order.id)}">환불 상태로 변경</button>` : ''}
         </div>`;
     const account = order.account
       ? `<p class="order-account">${esc(order.account.bank)} ${esc(order.account.number)} · ${esc(order.account.holder)}</p>`
       : '';
-    const stamp = order.status === 'paid'
-      ? `<p class="order-account">입금 완료 ${esc(formatWhen(order.paidAt))}</p>`
-      : order.status === 'refunded'
-        ? `<p class="order-account">환불 처리 ${esc(formatWhen(order.refundedAt))}</p>`
-        : '';
+    const stamp = [
+      order.paidAt ? `입금 완료 ${esc(formatWhen(order.paidAt))}` : '',
+      order.receivedAt ? `수령 완료 ${esc(formatWhen(order.receivedAt))}` : '',
+      order.status === 'refunded' ? `환불 처리 ${esc(formatWhen(order.refundedAt))}` : '',
+    ].filter(Boolean).map((line) => `<p class="order-account">${line}</p>`).join('');
     return `
       <article class="order">
         <div class="order-top">
@@ -174,6 +203,7 @@ async function load() {
       const current = data.find((order) => order.id === state.confirmId);
       const stale = !current
         || (state.confirmAction === 'paid' && current.status !== 'pending')
+        || (state.confirmAction === 'received' && current.status !== 'paid')
         || (state.confirmAction === 'refund' && current.status === 'refunded');
       if (stale) {
         state.confirmId = null;
@@ -292,7 +322,7 @@ async function applyStatus(id) {
   state.busy = true;
   renderOrders();
   try {
-    const response = await fetch(`/api/orders/${id}/${action === 'paid' ? 'paid' : 'refund'}`, { method: 'POST' });
+    const response = await fetch(`/api/orders/${id}/${statusPath(action)}`, { method: 'POST' });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || '상태를 바꾸지 못했습니다.');
     state.confirmId = null;
@@ -314,6 +344,7 @@ async function applyStatus(id) {
 document.body.addEventListener('click', (event) => {
   const filter = event.target.closest('[data-filter]');
   const askPaid = event.target.closest('[data-ask-paid]');
+  const askReceived = event.target.closest('[data-ask-received]');
   const askRefund = event.target.closest('[data-ask-refund]');
   const cancel = event.target.closest('[data-cancel-action]');
   const confirm = event.target.closest('[data-confirm-id]');
@@ -325,6 +356,12 @@ document.body.addEventListener('click', (event) => {
   if (askPaid) {
     state.confirmId = askPaid.dataset.askPaid;
     state.confirmAction = 'paid';
+    showError('');
+    renderOrders();
+  }
+  if (askReceived) {
+    state.confirmId = askReceived.dataset.askReceived;
+    state.confirmAction = 'received';
     showError('');
     renderOrders();
   }

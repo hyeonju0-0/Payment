@@ -26,13 +26,14 @@
   <main class="admin">
     <div class="hero admin-hero">
       <p class="eyebrow">관리자</p>
-      <h1>입금을 확인하고 완료로 바꿉니다</h1>
-      <p>입금 완료로 바꾸면 주문 화면에 완료 메시지가 나타납니다. 주문을 직접 추가할 수도 있습니다.</p>
+      <h1>입금과 수령을 확인합니다</h1>
+      <p>입금 완료로 바꾸면 주문 화면에 완료 메시지가 나타납니다. 전달한 뒤에는 수령 완료로 바꿀 수 있습니다.</p>
     </div>
 
     <section class="stats" aria-label="주문 요약">
       <article class="stat"><span>입금 대기</span><strong id="statPending">0</strong></article>
       <article class="stat"><span>입금 완료</span><strong id="statPaid">0</strong></article>
+      <article class="stat"><span>수령 완료</span><strong id="statReceived">0</strong></article>
       <article class="stat"><span>환불</span><strong id="statRefunded">0</strong></article>
       <article class="stat"><span>대기 금액</span><strong id="statAmount">0원</strong></article>
     </section>
@@ -42,6 +43,7 @@
         <button type="button" class="chip active" data-filter="all" aria-pressed="true">전체</button>
         <button type="button" class="chip" data-filter="pending" aria-pressed="false">입금 대기</button>
         <button type="button" class="chip" data-filter="paid" aria-pressed="false">입금 완료</button>
+        <button type="button" class="chip" data-filter="received" aria-pressed="false">수령 완료</button>
         <button type="button" class="chip" data-filter="refunded" aria-pressed="false">환불</button>
       </div>
       <div class="toolbar-end">
@@ -55,11 +57,11 @@
       <h2>직접 주문 추가</h2>
       <label class="field">
         <span>주문자 이름</span>
-        <input id="addName" maxlength="30" autocomplete="name" placeholder="이름">
+        <input id="addName" maxlength="45" autocomplete="name" placeholder="이름">
       </label>
       <label class="field">
         <span>요청 사항</span>
-        <textarea id="addMemo" maxlength="80" placeholder="선택 사항"></textarea>
+        <textarea id="addMemo" maxlength="100" placeholder="선택 사항"></textarea>
       </label>
       <div id="addLines"></div>
       <button type="button" class="btn ghost compact" id="addLine">메뉴 줄 추가</button>

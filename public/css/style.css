@@ -10,6 +10,8 @@
   --wait-bg: #f8efd8;
   --refund: #6d4c7d;
   --refund-bg: #f3eaf6;
+  --received: #1d4e89;
+  --received-bg: #e7f0fa;
   --ok: #1f6b45;
   --shadow: 0 16px 40px rgba(55, 38, 22, 0.08);
   --header: 72px;
@@ -284,7 +286,7 @@ textarea { min-height: 68px; resize: vertical; }
 
 .admin { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 64px; }
 .admin-hero { margin-bottom: 22px; }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 .stat {
   background: var(--card);
   border: 1px solid var(--line);
@@ -323,6 +325,7 @@ textarea { min-height: 68px; resize: vertical; }
 }
 .pill.wait { background: var(--wait-bg); color: var(--wait); }
 .pill.paid { background: #e5f4ec; color: var(--ok); }
+.pill.received { background: var(--received-bg); color: var(--received); }
 .pill.refund { background: var(--refund-bg); color: var(--refund); }
 .order-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .composer { display: grid; gap: 12px; margin-top: 16px; }

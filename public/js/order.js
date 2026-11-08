@@ -44,6 +44,8 @@ const els = {
   waitKicker: document.getElementById('waitKicker'),
   waitDetail: document.getElementById('waitDetail'),
   paidDetail: document.getElementById('paidDetail'),
+  paidKicker: document.getElementById('paidKicker'),
+  paidTitle: document.getElementById('paidTitle'),
   accountBlock: document.getElementById('accountBlock'),
   amountLabel: document.getElementById('amountLabel'),
   receiptTitle: document.getElementById('receiptTitle'),
@@ -196,16 +198,24 @@ function renderReceipt(order) {
   if (state.renderedStatus === statusKey && !els.modal.hidden) return;
   state.renderedStatus = statusKey;
   const paid = order.status === 'paid';
+  const received = order.status === 'received';
   const refunded = order.status === 'refunded';
+  const settled = paid || received || refunded;
   const transfer = order.paymentMethod !== 'cash' && order.account;
-  els.waitView.hidden = paid || refunded;
-  els.paidView.hidden = !paid && !refunded;
-  els.accountBlock.hidden = !transfer || paid || refunded;
-  if (paid) {
-    document.getElementById('paidTitle').textContent = '입금이 완료되었습니다';
+  els.waitView.hidden = settled;
+  els.paidView.hidden = !settled;
+  els.accountBlock.hidden = !transfer || settled;
+  if (received) {
+    els.paidKicker.textContent = '수령 완료';
+    els.paidTitle.textContent = '수령이 완료되었습니다';
+    els.paidDetail.textContent = `${order.customerName} 님의 주문을 전달했습니다.`;
+  } else if (paid) {
+    els.paidKicker.textContent = '입금 완료';
+    els.paidTitle.textContent = '입금이 완료되었습니다';
     els.paidDetail.textContent = `${order.customerName} 님의 ${methodLabel(order.paymentMethod)} 결제가 확인되었습니다.`;
   } else if (refunded) {
-    document.getElementById('paidTitle').textContent = '환불된 주문입니다';
+    els.paidKicker.textContent = '환불';
+    els.paidTitle.textContent = '환불된 주문입니다';
     els.paidDetail.textContent = '이 주문은 환불 상태로 변경되었습니다.';
   } else if (transfer) {
     els.waitKicker.textContent = '주문이 접수되었습니다';
@@ -221,9 +231,9 @@ function renderReceipt(order) {
   els.receiptItems.innerHTML = order.items.map((item) => `
     <li><span>${esc(item.name)} × ${item.qty}</span><span>${won(item.price * item.qty)}</span></li>
   `).join('');
-  els.amountLabel.textContent = transfer && !paid ? '입금액' : '결제 금액';
+  els.amountLabel.textContent = transfer && !settled ? '입금액' : '결제 금액';
   els.receiptTotal.textContent = won(order.total);
-  if (transfer && !paid && !refunded) {
+  if (transfer && !settled) {
     els.accountBank.textContent = order.account.bank;
     els.accountNumber.textContent = order.account.number;
     els.accountHolder.textContent = `예금주 ${order.account.holder}`;
@@ -233,8 +243,9 @@ function renderReceipt(order) {
     els.copyAccount.dataset.number = order.account.number;
   }
   els.modal.hidden = false;
+  els.modal.querySelector('.receipt').setAttribute('aria-labelledby', settled ? 'paidTitle' : 'receiptTitle');
   syncLock();
-  if (paid) document.getElementById('paidTitle').focus();
+  if (settled) els.paidTitle.focus();
   else if (transfer) els.copyAccount.focus();
 }
 
@@ -481,7 +492,7 @@ async function init() {
     let saved = '';
     try { saved = sessionStorage.getItem('ondam-watch') || ''; } catch { saved = ''; }
     const orderId = requested || saved;
-    if (/^OD-\d{8}-\d{4}$/.test(orderId)) {
+    if (/^\d+$/.test(orderId)) {
       const response = await fetch(`/api/orders/${orderId}`, { cache: 'no-store' });
       if (response.ok) watchOrder(await response.json());
     }

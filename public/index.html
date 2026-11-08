@@ -45,12 +45,12 @@
       <div class="cart-foot">
         <label class="field">
           <span>주문자 이름</span>
-          <input id="customerName" name="customerName" maxlength="30" autocomplete="name" placeholder="입금자명">
+          <input id="customerName" name="customerName" maxlength="45" autocomplete="name" placeholder="입금자명">
           <small>계좌이체라면 입금자명과 같게 적어 주세요.</small>
         </label>
         <label class="field">
           <span>요청 사항</span>
-          <textarea id="memo" name="memo" maxlength="80" placeholder="선택 사항"></textarea>
+          <textarea id="memo" name="memo" maxlength="100" placeholder="선택 사항"></textarea>
         </label>
         <div class="total-row">
           <span>합계</span>
@@ -92,7 +92,7 @@
         <p class="choice-lead" id="waitDetail"></p>
       </div>
       <div id="paidView" hidden>
-        <p class="receipt-kicker">입금 완료</p>
+        <p class="receipt-kicker" id="paidKicker">입금 완료</p>
         <h2 id="paidTitle" tabindex="-1">입금이 완료되었습니다</h2>
         <p class="choice-lead" id="paidDetail"></p>
       </div>

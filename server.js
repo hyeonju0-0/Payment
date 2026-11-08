@@ -1,11 +1,20 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const mysql = require('mysql2/promise');
 const config = require('./config');
 
+let localConfig = {};
+try {
+  localConfig = require('./config.local');
+} catch (error) {
+  if (error.code !== 'MODULE_NOT_FOUND') throw error;
+}
+
 const PUBLIC_DIR = path.resolve(__dirname, 'public');
-const DATA_FILE = path.resolve(__dirname, 'data', 'orders.json');
 const PORT = Number(process.env.PORT) || config.port || 3000;
+const FOOD_IDS = ['sotteok', 'chillis', 'sausage'];
+const dbPassword = process.env.DB_PASSWORD || localConfig.password || '';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -17,17 +26,23 @@ const MIME = {
 };
 
 function assertConfig() {
-  const { account, menu, shopName } = config;
+  const { account, menu, shopName, db } = config;
   if (!shopName || !account || !account.bank || !account.number || !account.holder) {
     throw new Error('config.js 의 가게 이름과 계좌 정보를 확인해 주세요.');
   }
-  if (!Array.isArray(menu) || menu.length === 0) {
-    throw new Error('config.js 에 메뉴를 하나 이상 넣어 주세요.');
+  if (!db || !db.host || !db.user || !db.database || !db.port) {
+    throw new Error('config.js 의 데이터베이스 접속 정보를 확인해 주세요.');
+  }
+  if (!dbPassword) {
+    throw new Error('데이터베이스 비밀번호가 없습니다. config.local.js 의 password 또는 DB_PASSWORD를 설정해 주세요.');
+  }
+  if (!Array.isArray(menu) || menu.length !== FOOD_IDS.length) {
+    throw new Error('config.js 메뉴는 소떡, 칠리, 소시지 세 개여야 합니다.');
   }
   const ids = new Set();
   for (const item of menu) {
-    if (!item.id || !/^[\w-]+$/.test(item.id) || ids.has(item.id)) {
-      throw new Error('config.js 메뉴 id 가 비어 있거나 중복되었습니다.');
+    if (!FOOD_IDS.includes(item.id) || ids.has(item.id)) {
+      throw new Error('config.js 메뉴 id는 sotteok, chillis, sausage 여야 합니다.');
     }
     if (!item.category || !item.name || !Number.isInteger(item.price) || item.price < 1) {
       throw new Error(`config.js 메뉴 "${item.name || item.id}" 설정을 확인해 주세요.`);
@@ -36,27 +51,19 @@ function assertConfig() {
   }
 }
 
-function readOrders() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  }
-}
-
-function writeOrders(orders) {
-  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify(orders, null, 2), 'utf8');
-}
-
-let chain = Promise.resolve();
-function withOrders(work) {
-  const run = chain.then(() => work(readOrders()));
-  chain = run.then(() => undefined, () => undefined);
-  return run;
-}
+const pool = mysql.createPool({
+  host: config.db.host,
+  port: config.db.port,
+  user: config.db.user,
+  password: dbPassword,
+  database: config.db.database,
+  waitForConnections: true,
+  connectionLimit: 10,
+  charset: 'utf8mb4',
+  timezone: '+09:00',
+  dateStrings: true,
+  ssl: { rejectUnauthorized: false },
+});
 
 function httpError(status, message) {
   const error = new Error(message);
@@ -103,67 +110,44 @@ function send(res, status, data) {
   res.end(body);
 }
 
-function seoulDateId(date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date);
-  return parts.replaceAll('-', '');
-}
-
 function cleanText(value, max) {
   return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
-function createOrder(orders, body) {
-  const customerName = cleanText(body.customerName, 30);
-  const memo = cleanText(body.memo, 80);
-  const paymentMethod = body.paymentMethod;
-  if (paymentMethod !== 'cash' && paymentMethod !== 'transfer') {
-    throw httpError(400, '결제 방법을 선택해 주세요.');
-  }
-  if (!customerName) throw httpError(400, '주문자 이름을 입력해 주세요.');
-  if (!Array.isArray(body.items) || body.items.length === 0) {
-    throw httpError(400, '장바구니가 비어 있습니다.');
-  }
-  if (body.items.length > 30) throw httpError(400, '한 번에 주문할 수 있는 메뉴는 30종까지입니다.');
+function toIso(value) {
+  if (!value) return null;
+  const text = String(value).replace(' ', 'T');
+  return text.length === 19 ? `${text}+09:00` : text;
+}
 
+function statusOf(row) {
+  if (Number(row.refund) === 1) return 'refunded';
+  if (Number(row.received) === 1) return 'received';
+  if (Number(row.confirmed_payment) === 1) return 'paid';
+  return 'pending';
+}
+
+function toOrder(row) {
   const menuById = new Map(config.menu.map((item) => [item.id, item]));
-  const merged = new Map();
-  for (const raw of body.items) {
-    const id = String(raw?.id ?? '');
-    const qty = raw?.qty;
+  const items = FOOD_IDS.flatMap((id) => {
+    const qty = Number(row[id]) || 0;
+    if (qty < 1) return [];
     const menu = menuById.get(id);
-    if (!menu || !Number.isInteger(qty) || qty < 1 || qty > 99) {
-      throw httpError(400, '장바구니 수량이 올바르지 않습니다.');
-    }
-    merged.set(id, (merged.get(id) || 0) + qty);
-  }
-
-  const items = [];
-  for (const [id, qty] of merged) {
-    if (qty > 99) throw httpError(400, '한 메뉴는 99개까지 주문할 수 있습니다.');
-    const menu = menuById.get(id);
-    items.push({ id, name: menu.name, price: menu.price, qty });
-  }
-
-  const day = seoulDateId();
-  const prefix = `OD-${day}-`;
-  const seq = orders.filter((order) => order.id.startsWith(prefix)).length + 1;
-  const order = {
-    id: prefix + String(seq).padStart(4, '0'),
-    createdAt: new Date().toISOString(),
-    customerName,
-    memo,
+    return [{ id, name: menu.name, price: menu.price, qty }];
+  });
+  const paymentMethod = row.payment_method;
+  return {
+    id: String(row.order_number),
+    createdAt: toIso(row.created_at),
+    customerName: row.name,
+    memo: row.memo || '',
     items,
-    total: items.reduce((sum, item) => sum + item.price * item.qty, 0),
+    total: Number(row.total),
     paymentMethod,
-    source: body.source === 'admin' ? 'admin' : 'customer',
-    status: 'pending',
-    paidAt: null,
-    refundedAt: null,
+    status: statusOf(row),
+    paidAt: toIso(row.confirmed_at),
+    receivedAt: toIso(row.received_at),
+    refundedAt: toIso(row.refunded_at),
     account: paymentMethod === 'transfer'
       ? {
         bank: config.account.bank,
@@ -172,34 +156,146 @@ function createOrder(orders, body) {
       }
       : null,
   };
-  orders.push(order);
-  writeOrders(orders);
-  return order;
 }
 
-function findOrder(orders, id) {
-  const order = orders.find((item) => item.id === id);
-  if (!order) throw httpError(404, '주문을 찾을 수 없습니다.');
-  return order;
+const ORDER_SELECT = `
+  SELECT f.order_number, f.sotteok, f.chillis, f.sausage,
+         o.name, o.memo, o.payment_method, o.total, o.created_at,
+         s.awaiting_payment, s.confirmed_payment, s.received, s.refund,
+         s.confirmed_at, s.received_at, s.refunded_at
+  FROM food f
+  JOIN \`order\` o ON o.order_number = f.order_number
+  JOIN state s ON s.order_number = o.order_number
+`;
+
+function mapDbError(error) {
+  if (error.status) return error;
+  if (error.code === 'ER_DATA_TOO_LONG') return httpError(400, '이름 또는 메모가 너무 깁니다.');
+  if (error.code === 'ER_TRUNCATED_WRONG_VALUE_FOR_FIELD' || error.errno === 1265) {
+    return httpError(400, '결제 방법은 현금 또는 계좌이체만 가능합니다.');
+  }
+  if (error.code === 'ER_CHECK_CONSTRAINT_VIOLATED' || error.errno === 3819) {
+    return httpError(400, '주문 값이 데이터베이스 규칙에 맞지 않습니다.');
+  }
+  console.error(error);
+  return httpError(500, '잠시 후 다시 시도해 주세요.');
 }
 
-function markPaid(orders, id) {
-  const order = findOrder(orders, id);
-  if (order.status === 'refunded') throw httpError(409, '환불된 주문은 입금 완료로 바꿀 수 없습니다.');
-  if (order.status === 'paid') throw httpError(409, '이미 입금 완료 상태입니다.');
-  order.status = 'paid';
-  order.paidAt = new Date().toISOString();
-  writeOrders(orders);
-  return order;
+async function listOrders() {
+  const [rows] = await pool.execute(`${ORDER_SELECT} ORDER BY o.created_at DESC, f.order_number DESC`);
+  return rows.map(toOrder);
 }
 
-function refundOrder(orders, id) {
-  const order = findOrder(orders, id);
-  if (order.status === 'refunded') throw httpError(409, '이미 환불 상태입니다.');
-  order.status = 'refunded';
-  order.refundedAt = new Date().toISOString();
-  writeOrders(orders);
-  return order;
+async function getOrder(orderNumber) {
+  const [rows] = await pool.execute(`${ORDER_SELECT} WHERE f.order_number = ?`, [orderNumber]);
+  if (!rows.length) throw httpError(404, '주문을 찾을 수 없습니다.');
+  return toOrder(rows[0]);
+}
+
+function orderNumberFromId(id) {
+  if (!/^\d+$/.test(id)) throw httpError(404, '주문을 찾을 수 없습니다.');
+  return Number(id);
+}
+
+async function createOrder(body) {
+  const customerName = cleanText(body.customerName, 45);
+  const memo = cleanText(body.memo, 100);
+  const paymentMethod = body.paymentMethod;
+  if (paymentMethod !== 'cash' && paymentMethod !== 'transfer') {
+    throw httpError(400, '결제 방법을 선택해 주세요.');
+  }
+  if (!customerName) throw httpError(400, '주문자 이름을 입력해 주세요.');
+  if (!Array.isArray(body.items) || body.items.length === 0) {
+    throw httpError(400, '장바구니가 비어 있습니다.');
+  }
+
+  const menuById = new Map(config.menu.map((item) => [item.id, item]));
+  const qty = { sotteok: 0, chillis: 0, sausage: 0 };
+  for (const raw of body.items) {
+    const id = String(raw?.id ?? '');
+    const count = raw?.qty;
+    const menu = menuById.get(id);
+    if (!menu || !Number.isInteger(count) || count < 1 || count > 99) {
+      throw httpError(400, '장바구니 수량이 올바르지 않습니다.');
+    }
+    qty[id] += count;
+    if (qty[id] > 99) throw httpError(400, '한 메뉴는 99개까지 주문할 수 있습니다.');
+  }
+
+  const items = FOOD_IDS.filter((id) => qty[id] > 0).map((id) => {
+    const menu = menuById.get(id);
+    return { price: menu.price, qty: qty[id] };
+  });
+  const total = items.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [food] = await connection.execute(
+      'INSERT INTO food (sotteok, chillis, sausage) VALUES (?, ?, ?)',
+      [qty.sotteok, qty.chillis, qty.sausage],
+    );
+    const orderNumber = food.insertId;
+    await connection.execute(
+      'INSERT INTO `order` (order_number, name, memo, payment_method, total) VALUES (?, ?, ?, ?, ?)',
+      [orderNumber, customerName, memo || null, paymentMethod, total],
+    );
+    await connection.execute('INSERT INTO state (order_number) VALUES (?)', [orderNumber]);
+    await connection.commit();
+    return orderNumber;
+  } catch (error) {
+    await connection.rollback();
+    throw mapDbError(error);
+  } finally {
+    connection.release();
+  }
+}
+
+async function changeStatus(orderNumber, action) {
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [rows] = await connection.execute(
+      'SELECT awaiting_payment, confirmed_payment, received, refund FROM state WHERE order_number = ? FOR UPDATE',
+      [orderNumber],
+    );
+    if (!rows.length) throw httpError(404, '주문을 찾을 수 없습니다.');
+    const status = statusOf(rows[0]);
+    if (action === 'paid') {
+      if (status === 'refunded') throw httpError(409, '환불된 주문은 입금 완료로 바꿀 수 없습니다.');
+      if (status === 'received') throw httpError(409, '수령 완료된 주문은 입금 완료로 바꿀 수 없습니다.');
+      if (status === 'paid') throw httpError(409, '이미 입금 완료 상태입니다.');
+      await connection.execute(
+        `UPDATE state
+         SET awaiting_payment = 0, confirmed_payment = 1, received = 0, refund = 0, confirmed_at = NOW()
+         WHERE order_number = ?`,
+        [orderNumber],
+      );
+    } else if (action === 'received') {
+      if (status === 'refunded') throw httpError(409, '환불된 주문은 수령 완료로 바꿀 수 없습니다.');
+      if (status === 'pending') throw httpError(409, '입금 완료 후에 수령 완료로 바꿀 수 있습니다.');
+      if (status === 'received') throw httpError(409, '이미 수령 완료 상태입니다.');
+      await connection.execute(
+        `UPDATE state
+         SET awaiting_payment = 0, confirmed_payment = 0, received = 1, refund = 0, received_at = NOW()
+         WHERE order_number = ?`,
+        [orderNumber],
+      );
+    } else {
+      if (status === 'refunded') throw httpError(409, '이미 환불 상태입니다.');
+      await connection.execute(
+        `UPDATE state
+         SET awaiting_payment = 0, confirmed_payment = 0, received = 0, refund = 1, refunded_at = NOW()
+         WHERE order_number = ?`,
+        [orderNumber],
+      );
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw mapDbError(error);
+  } finally {
+    connection.release();
+  }
 }
 
 function resolveStatic(pathname) {
@@ -238,36 +334,39 @@ async function handleApi(req, res, pathname) {
     return;
   }
   if (req.method === 'GET' && pathname === '/api/orders') {
-    const orders = readOrders().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    send(res, 200, orders);
+    send(res, 200, await listOrders());
     return;
   }
   if (req.method === 'POST' && pathname === '/api/orders') {
     const body = await readBody(req);
-    const order = await withOrders((orders) => createOrder(orders, body));
-    send(res, 201, order);
+    const orderNumber = await createOrder(body);
+    send(res, 201, await getOrder(orderNumber));
     return;
   }
-  const orderMatch = pathname.match(/^\/api\/orders\/(OD-\d{8}-\d{4})$/);
+  const orderMatch = pathname.match(/^\/api\/orders\/(\d+)$/);
   if (req.method === 'GET' && orderMatch) {
-    const order = readOrders().find((item) => item.id === orderMatch[1]);
-    if (!order) {
-      send(res, 404, { error: '주문을 찾을 수 없습니다.' });
-      return;
-    }
-    send(res, 200, order);
+    send(res, 200, await getOrder(orderNumberFromId(orderMatch[1])));
     return;
   }
-  const paidMatch = pathname.match(/^\/api\/orders\/(OD-\d{8}-\d{4})\/paid$/);
+  const paidMatch = pathname.match(/^\/api\/orders\/(\d+)\/paid$/);
   if (req.method === 'POST' && paidMatch) {
-    const order = await withOrders((orders) => markPaid(orders, paidMatch[1]));
-    send(res, 200, order);
+    const orderNumber = orderNumberFromId(paidMatch[1]);
+    await changeStatus(orderNumber, 'paid');
+    send(res, 200, await getOrder(orderNumber));
     return;
   }
-  const refundMatch = pathname.match(/^\/api\/orders\/(OD-\d{8}-\d{4})\/refund$/);
+  const receivedMatch = pathname.match(/^\/api\/orders\/(\d+)\/received$/);
+  if (req.method === 'POST' && receivedMatch) {
+    const orderNumber = orderNumberFromId(receivedMatch[1]);
+    await changeStatus(orderNumber, 'received');
+    send(res, 200, await getOrder(orderNumber));
+    return;
+  }
+  const refundMatch = pathname.match(/^\/api\/orders\/(\d+)\/refund$/);
   if (req.method === 'POST' && refundMatch) {
-    const order = await withOrders((orders) => refundOrder(orders, refundMatch[1]));
-    send(res, 200, order);
+    const orderNumber = orderNumberFromId(refundMatch[1]);
+    await changeStatus(orderNumber, 'refund');
+    send(res, 200, await getOrder(orderNumber));
     return;
   }
   send(res, 404, { error: '요청한 주소를 찾을 수 없습니다.' });
@@ -305,12 +404,19 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     if (res.headersSent) return;
     const status = error.status || 500;
+    if (status === 500) console.error(error);
     send(res, status, { error: status === 500 ? '잠시 후 다시 시도해 주세요.' : error.message });
   }
 });
 
 assertConfig();
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`주문 화면  http://127.0.0.1:${PORT}`);
-  console.log(`관리자 화면  http://127.0.0.1:${PORT}/admin`);
+pool.query('SELECT 1').then(() => {
+  server.listen(PORT, '127.0.0.1', () => {
+    console.log(`주문 화면  http://127.0.0.1:${PORT}`);
+    console.log(`관리자 화면  http://127.0.0.1:${PORT}/admin`);
+  });
+}).catch((error) => {
+  console.error('데이터베이스에 연결하지 못했습니다.');
+  console.error(error.message);
+  process.exit(1);
 });
