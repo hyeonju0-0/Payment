@@ -13,6 +13,7 @@ const state = {
   qty: {},
   addMethod: '',
   adding: false,
+  loading: false,
   account: null,
 };
 
@@ -198,6 +199,31 @@ async function readSheet(response) {
   }
 }
 
+async function postSheet(payload) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(SHEET_URL, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (response.type === 'opaqueredirect' || response.status === 0 || response.status === 302) {
+      return { ok: true };
+    }
+    const data = await readSheet(response);
+    if (!response.ok || data.ok === false) throw new Error(data.error || '요청을 처리하지 못했습니다.');
+    return data;
+  } catch (error) {
+    if (error && error.name === 'AbortError') throw new Error('스프레드시트 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.');
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function toSheetOrder(row) {
   const menuById = new Map(state.menu.map((item) => [item.id, item]));
   const items = ['sotteok', 'chillis', 'sausage'].flatMap((id) => {
@@ -221,6 +247,8 @@ function toSheetOrder(row) {
 }
 
 async function load() {
+  if (state.loading) return;
+  state.loading = true;
   try {
     const response = await fetch(SHEET_URL, { cache: 'no-store' });
     const data = await readSheet(response);
@@ -232,7 +260,7 @@ async function load() {
     state.signature = signature;
     state.orders = data.orders.map(toSheetOrder);
     if (state.confirmId) {
-      const current = data.find((order) => order.id === state.confirmId);
+      const current = data.orders.find((order) => order.id === state.confirmId);
       const stale = !current
         || (state.confirmAction === 'paid' && current.status !== 'pending')
         || (state.confirmAction === 'received' && current.status !== 'paid')
@@ -249,6 +277,8 @@ async function load() {
     if (state.orders.length === 0) {
       els.orders.innerHTML = `<p class="empty">${esc(error.message || sheetListMessage())}</p>`;
     }
+  } finally {
+    state.loading = false;
   }
 }
 
@@ -315,18 +345,13 @@ async function submitComposer() {
   els.addSubmit.disabled = true;
   showAddError('');
   try {
-    const response = await fetch(SHEET_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        customerName,
-        memo: els.addMemo.value,
-        paymentMethod: state.addMethod,
-        items,
-      }),
+    const data = await postSheet({
+      customerName,
+      memo: els.addMemo.value,
+      paymentMethod: state.addMethod,
+      items,
     });
-    const data = await readSheet(response);
-    if (!response.ok) throw new Error(data.error || '주문을 추가하지 못했습니다.');
+    if (data.ok === false) throw new Error(data.error || '주문을 추가하지 못했습니다.');
     els.addName.value = '';
     els.addMemo.value = '';
     state.addMethod = '';
@@ -345,24 +370,19 @@ async function submitComposer() {
 
 async function applyStatus(id) {
   const action = state.confirmAction;
+  const expected = action === 'refund' ? 'refunded' : action;
   state.busy = true;
   renderOrders();
   try {
-    const response = await fetch(SHEET_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'status',
-        id,
-        status: action === 'refund' ? 'refunded' : action,
-      }),
-    });
-    const data = await readSheet(response);
-    if (!response.ok || data.ok === false) throw new Error(data.error || '상태를 바꾸지 못했습니다.');
+    await postSheet({ action: 'status', id, status: expected });
     state.confirmId = null;
     state.confirmAction = null;
     state.signature = '';
     await load();
+    const updated = state.orders.find((order) => order.id === String(id));
+    if (!updated || updated.status !== expected) {
+      throw new Error('스프레드시트의 상태가 바뀌지 않았습니다. 주문번호가 시트의 주문번호와 같은지 확인해 주세요.');
+    }
     showError('');
     render();
   } catch (error) {
@@ -462,9 +482,9 @@ function beginAdmin() {
     .catch(() => {});
   load();
   window.setInterval(() => {
-    if (state.confirmId || state.busy || document.hidden) return;
+    if (state.confirmId || state.busy || state.loading || document.hidden) return;
     load();
-  }, 5000);
+  }, 15000);
 }
 
 const adminLock = document.getElementById('adminLock');
