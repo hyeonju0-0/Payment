@@ -339,6 +339,13 @@ textarea { min-height: 68px; resize: vertical; }
 .toolbar { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-top: 8px; }
 .toolbar .chips { margin: 0; }
 .toolbar-end { display: flex; gap: 8px; align-items: center; }
+.toolbar-end .btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
 .search { width: 220px; height: 42px; }
 .orders { display: grid; gap: 12px; margin-top: 8px; }
 .order {
