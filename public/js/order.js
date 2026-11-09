@@ -1,9 +1,11 @@
 const won = (value) => `${new Intl.NumberFormat('ko-KR').format(value)}원`;
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyEO1bsy0nk00PT0qv0OnDfA4zqntMzKe9tABqsscA6dFjfLg8CmMRviteoXwhcqoRU/exec';
 
 const state = {
   menu: [],
   category: '전체',
   cart: readCart(),
+  account: null,
   submitting: false,
   watching: null,
   renderedStatus: '',
@@ -107,19 +109,6 @@ function showError(message) {
   els.formError.hidden = !message;
   els.formError.textContent = message || '';
   if (message) els.formError.scrollIntoView({ block: 'nearest' });
-}
-
-function orderServerMessage() {
-  return '이 주소에서는 주문을 저장할 수 없습니다. 서버를 켠 컴퓨터에서 http://127.0.0.1:3000 을 연 뒤 결제해 주세요.';
-}
-
-async function readJson(response) {
-  const text = await response.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new Error(orderServerMessage());
-  }
 }
 
 function setCartOpen(open) {
@@ -235,11 +224,11 @@ function renderReceipt(order) {
   } else if (transfer) {
     els.waitKicker.textContent = '주문이 접수되었습니다';
     els.receiptTitle.textContent = '입금 계좌';
-    els.waitDetail.textContent = '계좌로 입금해 주세요. 관리자가 입금을 확인하면 이 화면에 완료 메시지가 나타납니다.';
+    els.waitDetail.textContent = '계좌로 입금해 주세요. 주문은 구글 스프레드시트에 기록되었습니다.';
   } else {
     els.waitKicker.textContent = '주문이 접수되었습니다';
     els.receiptTitle.textContent = '현금 결제';
-    els.waitDetail.textContent = '현금으로 접수되었습니다. 확인되면 이 화면에 입금 완료 메시지가 나타납니다.';
+    els.waitDetail.textContent = '현금으로 접수되었습니다. 주문은 구글 스프레드시트에 기록되었습니다.';
   }
   els.receiptOrder.textContent = `${order.id} · ${order.customerName} · ${methodLabel(order.paymentMethod)}`;
   els.receiptMeta.innerHTML = order.memo ? `<dt>요청</dt><dd>${esc(order.memo)}</dd>` : '';
@@ -402,31 +391,47 @@ async function submitOrder(paymentMethod) {
   els.chooseCash.disabled = true;
   els.chooseTransfer.disabled = true;
   els.choiceError.hidden = true;
+  const memo = els.memo.value.trim();
   try {
-    const response = await fetch('/api/orders', {
+    const response = await fetch(SHEET_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         customerName,
-        memo: els.memo.value,
+        memo,
         paymentMethod,
         items: lines.map((item) => ({ id: item.id, qty: item.qty })),
       }),
     });
-    const data = await readJson(response);
-    if (!response.ok) throw new Error(data.error || '주문을 접수하지 못했습니다.');
+    const text = await response.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch { data = {}; }
+    if (!response.ok || text.includes('doPost') || data.ok === false) {
+      throw new Error('스프레드시트에 기록하지 못했습니다. Apps Script에 doPost를 저장한 뒤 배포를 새 버전으로 다시 올려 주세요.');
+    }
     state.cart = {};
     persistCart();
     els.memo.value = '';
     setCartOpen(false);
     els.choice.hidden = true;
     render();
-    watchOrder(data);
+    renderReceipt({
+      id: '접수',
+      customerName,
+      memo,
+      paymentMethod,
+      status: 'pending',
+      items: lines,
+      total: lines.reduce((sum, item) => sum + item.price * item.qty, 0),
+      account: paymentMethod === 'transfer' ? state.account : null,
+    });
   } catch (error) {
     const raw = error && error.message ? error.message : '';
-    const unreachable = raw === 'Failed to fetch' || raw === 'Load failed' || raw.includes('NetworkError') || raw.includes('not valid JSON');
+    const unreachable = raw === 'Failed to fetch' || raw === 'Load failed' || raw.includes('NetworkError');
     els.choiceError.hidden = false;
-    els.choiceError.textContent = unreachable || !raw ? orderServerMessage() : raw;
+    els.choiceError.textContent = unreachable || !raw
+      ? '스프레드시트에 기록하지 못했습니다. Apps Script에 doPost를 저장한 뒤 배포를 새 버전으로 다시 올려 주세요.'
+      : raw;
   } finally {
     state.submitting = false;
     els.chooseCash.disabled = false;
@@ -499,6 +504,7 @@ async function init() {
     if (meta?.tagline) {
       document.querySelectorAll('.brand-sub').forEach((node) => { node.textContent = meta.tagline; });
     }
+    if (meta?.account?.bank && meta.account.number && meta.account.holder) state.account = meta.account;
     state.menu = await menuRes.json();
     for (const id of Object.keys(state.cart)) {
       const qty = state.cart[id];

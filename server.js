@@ -414,6 +414,11 @@ function writePublicData() {
   fs.writeFileSync(path.join(PUBLIC_DIR, 'meta.json'), JSON.stringify({
     shopName: config.shopName,
     tagline: config.tagline,
+    account: {
+      bank: config.account.bank,
+      number: config.account.number,
+      holder: config.account.holder,
+    },
   }));
 }
 
