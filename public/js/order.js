@@ -1,4 +1,5 @@
 const won = (value) => `${new Intl.NumberFormat('ko-KR').format(value)}원`;
+const LOCAL_ORDERS = 'ondam-orders';
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyEO1bsy0nk00PT0qv0OnDfA4zqntMzKe9tABqsscA6dFjfLg8CmMRviteoXwhcqoRU/exec';
 
 const state = {
@@ -372,6 +373,16 @@ async function submitOrder(paymentMethod) {
     if (!response.ok || text.includes('doPost') || data.ok === false) {
       throw new Error('스프레드시트에 기록하지 못했습니다.');
     }
+    saveLocalOrder({
+      createdAt: new Date().toISOString(),
+      customerName,
+      department,
+      memo,
+      sauces,
+      paymentMethod,
+      items: lines.map((item) => ({ name: item.name, qty: item.qty, price: item.price })),
+      total: lines.reduce((sum, item) => sum + item.price * item.qty, 0),
+    });
     state.cart = {};
     persistCart();
     els.memo.value = '';
@@ -427,11 +438,22 @@ function onClick(event) {
   }
 }
 
-function statusLabel(status) {
-  if (status === 'paid') return { className: 'paid', label: '입금 완료' };
-  if (status === 'received') return { className: 'received', label: '수령 완료' };
-  if (status === 'refunded') return { className: 'refund', label: '환불' };
-  return { className: 'wait', label: '입금 대기' };
+function readLocalOrders() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LOCAL_ORDERS) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalOrder(order) {
+  const orders = [order, ...readLocalOrders()].slice(0, 30);
+  try {
+    localStorage.setItem(LOCAL_ORDERS, JSON.stringify(orders));
+  } catch {
+    // 저장을 막아 둔 브라우저에서는 이번 화면의 영수증만 남습니다.
+  }
 }
 
 function formatWhen(iso) {
@@ -457,11 +479,10 @@ function showLookupError(message) {
 function renderLookup(orders) {
   const result = document.getElementById('lookupResult');
   if (orders.length === 0) {
-    result.innerHTML = '<p class="empty">같은 이름과 학과의 주문이 없습니다.</p>';
+    result.innerHTML = '<p class="empty">이 브라우저에 저장된 주문이 없습니다.</p>';
     return;
   }
   result.innerHTML = `<div class="orders">${orders.map((order) => {
-    const view = statusLabel(order.status);
     const items = (order.items || []).map((item) => `
       <li><span>${esc(item.name)} × ${item.qty}</span><span>${won(item.price * item.qty)}</span></li>
     `).join('');
@@ -473,9 +494,8 @@ function renderLookup(orders) {
         <div class="order-top">
           <div>
             <h2>${esc(order.customerName)}</h2>
-            <p class="order-id">${esc(order.id)} · ${methodLabel(order.paymentMethod)}</p>
+            <p class="order-id">${methodLabel(order.paymentMethod)}</p>
           </div>
-          <span class="pill ${view.className}">${view.label}</span>
         </div>
         <time datetime="${esc(order.createdAt || '')}">${esc(formatWhen(order.createdAt))}</time>
         <ul>${items}</ul>
@@ -488,43 +508,22 @@ function renderLookup(orders) {
   }).join('')}</div>`;
 }
 
-async function lookupOrders(event) {
+function lookupOrders(event) {
   event.preventDefault();
   const name = document.getElementById('lookupName').value.trim();
   const department = document.getElementById('lookupDepartment').value.trim();
-  const button = document.getElementById('lookupSubmit');
   if (!name) {
     showLookupError('이름을 입력해 주세요.');
     document.getElementById('lookupName').focus();
     return;
   }
-  button.disabled = true;
-  button.textContent = '확인 중';
   showLookupError('');
-  try {
-    const params = new URLSearchParams({ name, department });
-    const response = await fetch(`api/my-orders?${params}`, { cache: 'no-store' });
-    const text = await response.text();
-    let data = null;
-    try { data = JSON.parse(text); } catch { data = null; }
-    if (!data) {
-      throw new Error('주문 확인은 이 컴퓨터에서 서버를 켠 뒤 http://127.0.0.1:3000 에서 할 수 있습니다.');
-    }
-    if (!response.ok || data.ok === false || !Array.isArray(data.orders)) {
-      throw new Error(data.error || '주문을 확인하지 못했습니다.');
-    }
-    renderLookup(data.orders);
-  } catch (error) {
-    document.getElementById('lookupResult').innerHTML = '';
-    const raw = error && error.message ? error.message : '';
-    const unreachable = raw === 'Failed to fetch' || raw === 'Load failed' || raw.includes('NetworkError');
-    showLookupError(unreachable
-      ? '주문 확인은 이 컴퓨터에서 서버를 켠 뒤 http://127.0.0.1:3000 에서 할 수 있습니다.'
-      : (raw || '주문을 확인하지 못했습니다.'));
-  } finally {
-    button.disabled = false;
-    button.textContent = '확인';
-  }
+  const orders = readLocalOrders().filter((order) => {
+    if (String(order.customerName || '').trim() !== name) return false;
+    if (!department) return true;
+    return String(order.department || '').trim() === department;
+  });
+  renderLookup(orders);
 }
 
 async function init() {
