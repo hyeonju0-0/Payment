@@ -7,9 +7,6 @@ const state = {
   cart: readCart(),
   account: null,
   submitting: false,
-  watching: null,
-  renderedStatus: '',
-  pollTimer: 0,
 };
 
 const els = {
@@ -21,6 +18,7 @@ const els = {
   total: document.getElementById('total'),
   pay: document.getElementById('pay'),
   name: document.getElementById('customerName'),
+  department: document.getElementById('department'),
   memo: document.getElementById('memo'),
   formError: document.getElementById('formError'),
   fab: document.getElementById('cartFab'),
@@ -41,13 +39,8 @@ const els = {
   choiceError: document.getElementById('choiceError'),
   chooseCash: document.getElementById('chooseCash'),
   chooseTransfer: document.getElementById('chooseTransfer'),
-  waitView: document.getElementById('waitView'),
-  paidView: document.getElementById('paidView'),
   waitKicker: document.getElementById('waitKicker'),
   waitDetail: document.getElementById('waitDetail'),
-  paidDetail: document.getElementById('paidDetail'),
-  paidKicker: document.getElementById('paidKicker'),
-  paidTitle: document.getElementById('paidTitle'),
   accountBlock: document.getElementById('accountBlock'),
   amountLabel: document.getElementById('amountLabel'),
   receiptTitle: document.getElementById('receiptTitle'),
@@ -197,47 +190,45 @@ function methodLabel(method) {
   return method === 'cash' ? '현금' : '계좌이체';
 }
 
+function selectedSauces() {
+  return [...document.querySelectorAll('#cart [data-sauce][aria-pressed="true"]')].map((button) => button.dataset.sauce);
+}
+
+function clearSauces() {
+  document.querySelectorAll('#cart [data-sauce]').forEach((button) => {
+    button.setAttribute('aria-pressed', 'false');
+    button.classList.remove('active');
+  });
+}
+
+function memoForSheet(memo, sauces) {
+  const sauceLine = sauces.length ? `소스: ${sauces.join(', ')}` : '';
+  return [sauceLine, memo].filter(Boolean).join('\n');
+}
+
 function renderReceipt(order) {
-  const statusKey = `${order.id}:${order.status}`;
-  if (state.renderedStatus === statusKey && !els.modal.hidden) return;
-  state.renderedStatus = statusKey;
-  const paid = order.status === 'paid';
-  const received = order.status === 'received';
-  const refunded = order.status === 'refunded';
-  const settled = paid || received || refunded;
   const transfer = order.paymentMethod !== 'cash' && order.account;
-  els.waitView.hidden = settled;
-  els.paidView.hidden = !settled;
-  els.accountBlock.hidden = !transfer || settled;
-  if (received) {
-    els.paidKicker.textContent = '수령 완료';
-    els.paidTitle.textContent = '수령이 완료되었습니다';
-    els.paidDetail.textContent = `${order.customerName} 님의 주문을 전달했습니다.`;
-  } else if (paid) {
-    els.paidKicker.textContent = '입금 완료';
-    els.paidTitle.textContent = '입금이 완료되었습니다';
-    els.paidDetail.textContent = `${order.customerName} 님의 ${methodLabel(order.paymentMethod)} 결제가 확인되었습니다.`;
-  } else if (refunded) {
-    els.paidKicker.textContent = '환불';
-    els.paidTitle.textContent = '환불된 주문입니다';
-    els.paidDetail.textContent = '이 주문은 환불 상태로 변경되었습니다.';
-  } else if (transfer) {
+  els.accountBlock.hidden = !transfer;
+  if (transfer) {
     els.waitKicker.textContent = '주문이 접수되었습니다';
     els.receiptTitle.textContent = '입금 계좌';
-    els.waitDetail.textContent = '계좌로 입금해 주세요. 주문은 구글 스프레드시트에 기록되었습니다.';
+    els.waitDetail.textContent = '계좌로 입금해 주세요. 입금한 뒤에는 직원에게 확인받아야 주문이 접수됩니다.';
   } else {
     els.waitKicker.textContent = '주문이 접수되었습니다';
     els.receiptTitle.textContent = '현금 결제';
     els.waitDetail.textContent = '현금으로 접수되었습니다. 주문은 구글 스프레드시트에 기록되었습니다.';
   }
-  els.receiptOrder.textContent = `${order.id} · ${order.customerName} · ${methodLabel(order.paymentMethod)}`;
-  els.receiptMeta.innerHTML = order.memo ? `<dt>요청</dt><dd>${esc(order.memo)}</dd>` : '';
+  els.receiptOrder.textContent = `${order.customerName} · ${methodLabel(order.paymentMethod)}`;
+  const departmentLine = order.department ? `<dt>학과</dt><dd>${esc(order.department)}</dd>` : '';
+  const sauceLine = order.sauces?.length ? `<dt>소스</dt><dd>${esc(order.sauces.join(', '))}</dd>` : '';
+  const memoLine = order.memo ? `<dt>요청</dt><dd>${esc(order.memo)}</dd>` : '';
+  els.receiptMeta.innerHTML = departmentLine + sauceLine + memoLine;
   els.receiptItems.innerHTML = order.items.map((item) => `
     <li><span>${esc(item.name)} × ${item.qty}</span><span>${won(item.price * item.qty)}</span></li>
   `).join('');
-  els.amountLabel.textContent = transfer && !settled ? '입금액' : '결제 금액';
+  els.amountLabel.textContent = transfer ? '입금액' : '결제 금액';
   els.receiptTotal.textContent = won(order.total);
-  if (transfer && !settled) {
+  if (transfer) {
     els.accountBank.textContent = order.account.bank;
     els.accountNumber.textContent = order.account.number;
     els.accountHolder.textContent = `예금주 ${order.account.holder}`;
@@ -247,50 +238,14 @@ function renderReceipt(order) {
     els.copyAccount.dataset.number = order.account.number;
   }
   els.modal.hidden = false;
-  els.modal.querySelector('.receipt').setAttribute('aria-labelledby', settled ? 'paidTitle' : 'receiptTitle');
+  els.modal.querySelector('.receipt').setAttribute('aria-labelledby', 'receiptTitle');
   syncLock();
-  if (settled) els.paidTitle.focus();
-  else if (transfer) els.copyAccount.focus();
-}
-
-function stopWatch() {
-  window.clearInterval(state.pollTimer);
-  state.pollTimer = 0;
-  state.watching = null;
-  state.renderedStatus = '';
-  try { sessionStorage.removeItem('ondam-watch'); } catch { /* 무시 */ }
-  if (location.search) history.replaceState({}, '', '/');
-}
-
-function watchOrder(order) {
-  state.watching = order;
-  try { sessionStorage.setItem('ondam-watch', order.id); } catch { /* 무시 */ }
-  history.replaceState({}, '', `/?order=${encodeURIComponent(order.id)}`);
-  renderReceipt(order);
-  window.clearInterval(state.pollTimer);
-  state.pollTimer = window.setInterval(refreshWatch, 2000);
-}
-
-async function refreshWatch() {
-  if (!state.watching) return;
-  try {
-    const response = await fetch(`/api/orders/${state.watching.id}`, { cache: 'no-store' });
-    if (!response.ok) return;
-    const order = await response.json();
-    const changed = order.status !== state.watching.status;
-    state.watching = order;
-    if (!changed) return;
-    renderReceipt(order);
-  } catch {
-    // 다음 확인에서 다시 시도합니다.
-  }
+  if (transfer) els.copyAccount.focus();
 }
 
 function closeReceipt() {
-  const finished = state.watching && state.watching.status !== 'pending';
   els.modal.hidden = true;
   syncLock();
-  if (finished) stopWatch();
   els.pay.focus();
 }
 
@@ -303,6 +258,11 @@ function openChoice() {
   if (!els.name.value.trim()) {
     showError('주문자 이름을 입력해 주세요.');
     els.name.focus();
+    return;
+  }
+  if (!els.department.value.trim()) {
+    showError('학과를 입력해 주세요.');
+    els.department.focus();
     return;
   }
   showError('');
@@ -366,7 +326,7 @@ async function copyAccount() {
   if (!copied) {
     els.copyStatus.classList.add('is-error');
     els.copyAccount.textContent = '계좌번호 복사';
-    els.copyStatus.textContent = '복사하지 못했습니다. 계좌번호를 직접 선택해 주세요.';
+    els.copyStatus.textContent = '복사하지 못했습니다. 계좌번호를 직접 입력해 주세요.';
     return;
   }
   window.getSelection()?.removeAllRanges();
@@ -382,7 +342,8 @@ async function submitOrder(paymentMethod) {
   if (state.submitting) return;
   const lines = cartLines();
   const customerName = els.name.value.trim();
-  if (lines.length === 0 || !customerName) {
+  const department = els.department.value.replace(/[\r\n]+/g, ' ').trim();
+  if (lines.length === 0 || !customerName || !department) {
     closeChoice();
     openChoice();
     return;
@@ -392,13 +353,15 @@ async function submitOrder(paymentMethod) {
   els.chooseTransfer.disabled = true;
   els.choiceError.hidden = true;
   const memo = els.memo.value.trim();
+  const sauces = selectedSauces();
   try {
     const response = await fetch(SHEET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         customerName,
-        memo,
+        department,
+        memo: memoForSheet(memo, sauces),
         paymentMethod,
         items: lines.map((item) => ({ id: item.id, qty: item.qty })),
       }),
@@ -407,20 +370,22 @@ async function submitOrder(paymentMethod) {
     let data = {};
     try { data = JSON.parse(text); } catch { data = {}; }
     if (!response.ok || text.includes('doPost') || data.ok === false) {
-      throw new Error('스프레드시트에 기록하지 못했습니다. Apps Script에 doPost를 저장한 뒤 배포를 새 버전으로 다시 올려 주세요.');
+      throw new Error('스프레드시트에 기록하지 못했습니다.');
     }
     state.cart = {};
     persistCart();
     els.memo.value = '';
+    els.department.value = '';
+    clearSauces();
     setCartOpen(false);
     els.choice.hidden = true;
     render();
     renderReceipt({
-      id: '접수',
       customerName,
+      department,
       memo,
+      sauces,
       paymentMethod,
-      status: 'pending',
       items: lines,
       total: lines.reduce((sum, item) => sum + item.price * item.qty, 0),
       account: paymentMethod === 'transfer' ? state.account : null,
@@ -430,7 +395,7 @@ async function submitOrder(paymentMethod) {
     const unreachable = raw === 'Failed to fetch' || raw === 'Load failed' || raw.includes('NetworkError');
     els.choiceError.hidden = false;
     els.choiceError.textContent = unreachable || !raw
-      ? '스프레드시트에 기록하지 못했습니다. Apps Script에 doPost를 저장한 뒤 배포를 새 버전으로 다시 올려 주세요.'
+      ? '스프레드시트에 기록하지 못했습니다.'
       : raw;
   } finally {
     state.submitting = false;
@@ -454,6 +419,112 @@ function onClick(event) {
     state.category = category.dataset.cat;
     render();
   }
+  const sauce = event.target.closest('[data-sauce]');
+  if (sauce && els.cart.contains(sauce)) {
+    const on = sauce.getAttribute('aria-pressed') !== 'true';
+    sauce.setAttribute('aria-pressed', String(on));
+    sauce.classList.toggle('active', on);
+  }
+}
+
+function statusLabel(status) {
+  if (status === 'paid') return { className: 'paid', label: '입금 완료' };
+  if (status === 'received') return { className: 'received', label: '수령 완료' };
+  if (status === 'refunded') return { className: 'refund', label: '환불' };
+  return { className: 'wait', label: '입금 대기' };
+}
+
+function formatWhen(iso) {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return String(iso);
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+}
+
+function showLookupError(message) {
+  const error = document.getElementById('lookupError');
+  error.hidden = !message;
+  error.textContent = message || '';
+}
+
+function renderLookup(orders) {
+  const result = document.getElementById('lookupResult');
+  if (orders.length === 0) {
+    result.innerHTML = '<p class="empty">같은 이름과 학과의 주문이 없습니다.</p>';
+    return;
+  }
+  result.innerHTML = `<div class="orders">${orders.map((order) => {
+    const view = statusLabel(order.status);
+    const items = (order.items || []).map((item) => `
+      <li><span>${esc(item.name)} × ${item.qty}</span><span>${won(item.price * item.qty)}</span></li>
+    `).join('');
+    const department = order.department ? `<p class="memo">학과 ${esc(order.department)}</p>` : '';
+    const sauces = order.sauces?.length ? `<p class="memo">소스 ${esc(order.sauces.join(', '))}</p>` : '';
+    const memo = order.memo ? `<p class="memo">${esc(order.memo)}</p>` : '';
+    return `
+      <article class="order">
+        <div class="order-top">
+          <div>
+            <h2>${esc(order.customerName)}</h2>
+            <p class="order-id">${esc(order.id)} · ${methodLabel(order.paymentMethod)}</p>
+          </div>
+          <span class="pill ${view.className}">${view.label}</span>
+        </div>
+        <time datetime="${esc(order.createdAt || '')}">${esc(formatWhen(order.createdAt))}</time>
+        <ul>${items}</ul>
+        ${department}
+        ${sauces}
+        ${memo}
+        <div class="order-total"><span>합계</span><strong>${won(order.total)}</strong></div>
+      </article>
+    `;
+  }).join('')}</div>`;
+}
+
+async function lookupOrders(event) {
+  event.preventDefault();
+  const name = document.getElementById('lookupName').value.trim();
+  const department = document.getElementById('lookupDepartment').value.trim();
+  const button = document.getElementById('lookupSubmit');
+  if (!name) {
+    showLookupError('이름을 입력해 주세요.');
+    document.getElementById('lookupName').focus();
+    return;
+  }
+  button.disabled = true;
+  button.textContent = '확인 중';
+  showLookupError('');
+  try {
+    const params = new URLSearchParams({ name, department });
+    const response = await fetch(`api/my-orders?${params}`, { cache: 'no-store' });
+    const text = await response.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { data = null; }
+    if (!data) {
+      throw new Error('주문 확인은 이 컴퓨터에서 서버를 켠 뒤 http://127.0.0.1:3000 에서 할 수 있습니다.');
+    }
+    if (!response.ok || data.ok === false || !Array.isArray(data.orders)) {
+      throw new Error(data.error || '주문을 확인하지 못했습니다.');
+    }
+    renderLookup(data.orders);
+  } catch (error) {
+    document.getElementById('lookupResult').innerHTML = '';
+    const raw = error && error.message ? error.message : '';
+    const unreachable = raw === 'Failed to fetch' || raw === 'Load failed' || raw.includes('NetworkError');
+    showLookupError(unreachable
+      ? '주문 확인은 이 컴퓨터에서 서버를 켠 뒤 http://127.0.0.1:3000 에서 할 수 있습니다.'
+      : (raw || '주문을 확인하지 못했습니다.'));
+  } finally {
+    button.disabled = false;
+    button.textContent = '확인';
+  }
 }
 
 async function init() {
@@ -468,6 +539,12 @@ async function init() {
     try { sessionStorage.setItem('ondam-name', els.name.value); } catch { /* 무시 */ }
   });
   els.memo.addEventListener('input', () => showError(''));
+  els.department.addEventListener('input', () => showError(''));
+  els.department.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') openChoice();
+  });
+  document.getElementById('lookupForm').addEventListener('submit', lookupOrders);
+  if (els.name.value) document.getElementById('lookupName').value = els.name.value;
   els.pay.addEventListener('click', openChoice);
   els.name.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') openChoice();
@@ -511,14 +588,6 @@ async function init() {
       if (!state.menu.some((item) => item.id === id) || !Number.isInteger(qty) || qty < 1) delete state.cart[id];
     }
     render();
-    const requested = new URLSearchParams(location.search).get('order');
-    let saved = '';
-    try { saved = sessionStorage.getItem('ondam-watch') || ''; } catch { saved = ''; }
-    const orderId = requested || saved;
-    if (/^\d+$/.test(orderId)) {
-      const response = await fetch(`/api/orders/${orderId}`, { cache: 'no-store' });
-      if (response.ok) watchOrder(await response.json());
-    }
   } catch (error) {
     els.menu.innerHTML = `<p class="empty">${esc(error.message || '메뉴를 불러오지 못했습니다.')}</p>`;
   }

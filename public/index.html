@@ -4,20 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <meta name="theme-color" content="#f3efe6">
-  <title>온담 주문</title>
+  <title>전기 맞은 문방구</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='3' fill='%23b8432f'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' fill='white' font-family='sans-serif'%3E온%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20261109">
+  <link rel="stylesheet" href="css/style.css?v=20261109j">
 </head>
 <body>
   <header class="site-header">
     <a class="brand" href="./">
-      <span class="seal" aria-hidden="true">온</span>
+      <span class="seal" aria-hidden="true">전</span>
       <span>
-        <strong class="brand-name">온담</strong>
-        <small class="brand-sub">오늘의 한 끼</small>
+        <strong class="brand-name">전기 맞은 문방구</strong>
+        <small class="brand-sub">음식 주문</small>
       </span>
     </a>
     <a class="header-link" href="admin.html">관리자</a>
@@ -28,8 +28,25 @@
       <div class="hero">
         <p class="eyebrow">주문</p>
         <h1>메뉴를 고르고 장바구니에 담으세요</h1>
-        <p>결제하기에서 현금 또는 계좌이체를 고릅니다. 계좌번호는 계좌이체를 고른 경우에만 나타납니다.</p>
+        <p>결제하기에서 현금 또는 계좌이체를 고릅니다. 입금한 뒤에는 직원에게 확인받아야 주문이 접수됩니다.</p>
       </div>
+      <section class="lookup" aria-labelledby="lookupTitle">
+        <h2 id="lookupTitle">내 주문</h2>
+        <p>주문할 때 적은 이름과 학과로 접수 내용을 확인합니다.</p>
+        <form id="lookupForm" class="lookup-form">
+          <label class="field">
+            <span>이름</span>
+            <input id="lookupName" maxlength="45" autocomplete="name" placeholder="주문자 이름">
+          </label>
+          <label class="field">
+            <span>학과</span>
+            <input id="lookupDepartment" maxlength="45" placeholder="학과">
+          </label>
+          <button type="submit" class="btn primary" id="lookupSubmit">확인</button>
+        </form>
+        <p class="form-error" id="lookupError" hidden></p>
+        <div id="lookupResult"></div>
+      </section>
       <div class="chips" id="categories" role="tablist" aria-label="메뉴 분류"></div>
       <div class="grid" id="menu">
         <p class="empty">메뉴를 불러오는 중입니다.</p>
@@ -44,10 +61,22 @@
       <div class="cart-items" id="cartItems"></div>
       <div class="cart-foot">
         <label class="field">
-          <span>주문자 이름</span>
+          <span>주문자 이름(본인 실명)</span>
           <input id="customerName" name="customerName" maxlength="45" autocomplete="name" placeholder="입금자명">
           <small>계좌이체라면 입금자명과 같게 적어 주세요.</small>
         </label>
+        <label class="field">
+          <span>학과</span>
+          <input id="department" name="department" maxlength="45" placeholder="학과" required>
+        </label>
+        <div class="field">
+          <span>소스</span>
+          <div class="chips sauce-chips" role="group" aria-label="소스">
+            <button type="button" class="chip" data-sauce="케첩" aria-pressed="false">케첩</button>
+            <button type="button" class="chip" data-sauce="머스타드" aria-pressed="false">머스타드</button>
+            <button type="button" class="chip" data-sauce="치킨소스" aria-pressed="false">치킨소스</button>
+          </div>
+        </div>
         <label class="field">
           <span>요청 사항</span>
           <textarea id="memo" name="memo" maxlength="100" placeholder="선택 사항"></textarea>
@@ -86,16 +115,9 @@
   <div class="modal" id="modal" hidden>
     <div class="modal-backdrop" data-close-modal></div>
     <section class="receipt" role="dialog" aria-modal="true" aria-labelledby="receiptTitle">
-      <div id="waitView">
-        <p class="receipt-kicker" id="waitKicker">주문이 접수되었습니다</p>
-        <h2 id="receiptTitle">입금을 확인하고 있습니다</h2>
-        <p class="choice-lead" id="waitDetail"></p>
-      </div>
-      <div id="paidView" hidden>
-        <p class="receipt-kicker" id="paidKicker">입금 완료</p>
-        <h2 id="paidTitle" tabindex="-1">입금이 완료되었습니다</h2>
-        <p class="choice-lead" id="paidDetail"></p>
-      </div>
+      <p class="receipt-kicker" id="waitKicker">주문이 접수되었습니다</p>
+      <h2 id="receiptTitle">입금을 확인하고 있습니다</h2>
+      <p class="choice-lead" id="waitDetail"></p>
       <p class="receipt-order" id="receiptOrder"></p>
       <dl class="receipt-meta" id="receiptMeta"></dl>
       <ul class="receipt-items" id="receiptItems"></ul>
@@ -118,6 +140,6 @@
   <noscript>
     <p class="noscript">메뉴를 주문하려면 브라우저에서 자바스크립트를 켜 주세요.</p>
   </noscript>
-  <script src="js/order.js?v=20261109b"></script>
+  <script src="js/order.js?v=20261109m"></script>
 </body>
 </html>

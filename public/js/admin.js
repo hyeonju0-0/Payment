@@ -68,7 +68,8 @@ function visibleOrders() {
   return state.orders.filter((order) => {
     if (state.filter !== 'all' && order.status !== state.filter) return false;
     if (!query) return true;
-    return order.customerName.toLowerCase().includes(query) || order.id.toLowerCase().includes(query);
+    const haystack = [order.customerName, order.department || '', order.id, ...(order.sauces || [])].join(' ').toLowerCase();
+    return haystack.includes(query);
   });
 }
 
@@ -87,14 +88,14 @@ function confirmCopy(action) {
   if (action === 'paid') {
     return {
       label: '입금 확정',
-      text: '입금을 확인했습니까? 주문 화면에 완료 메시지가 표시됩니다.',
+      text: '입금을 확인했습니까?',
       kind: 'primary',
     };
   }
   if (action === 'received') {
     return {
       label: '수령 확정',
-      text: '손님에게 전달했습니까? 주문 화면에 수령 완료가 표시됩니다.',
+      text: '손님에게 전달했습니까?',
       kind: 'primary',
     };
   }
@@ -155,26 +156,24 @@ function renderOrders() {
     const account = order.account
       ? `<p class="order-account">${esc(order.account.bank)} ${esc(order.account.number)} · ${esc(order.account.holder)}</p>`
       : '';
-    const stamp = [
-      order.paidAt ? `입금 완료 ${esc(formatWhen(order.paidAt))}` : '',
-      order.receivedAt ? `수령 완료 ${esc(formatWhen(order.receivedAt))}` : '',
-      order.status === 'refunded' ? `환불 처리 ${esc(formatWhen(order.refundedAt))}` : '',
-    ].filter(Boolean).map((line) => `<p class="order-account">${line}</p>`).join('');
+    const department = order.department ? `<p class="memo">학과 ${esc(order.department)}</p>` : '';
+    const sauces = order.sauces?.length ? `<p class="memo">소스 ${esc(order.sauces.join(', '))}</p>` : '';
     return `
       <article class="order">
         <div class="order-top">
           <div>
             <h2>${esc(order.customerName)}</h2>
-            <p class="order-id">${esc(order.id)} · ${methodLabel(order)}${order.source === 'admin' ? ' · 관리자 등록' : ''}</p>
+            <p class="order-id">${esc(order.id)} · ${methodLabel(order)}</p>
           </div>
           <span class="pill ${view.className}">${view.label}</span>
         </div>
         <time datetime="${esc(order.createdAt)}">${esc(formatWhen(order.createdAt))}</time>
         <ul>${items}</ul>
+        ${department}
+        ${sauces}
         ${order.memo ? `<p class="memo">${esc(order.memo)}</p>` : ''}
         ${account}
         <div class="order-total"><span>합계</span><strong>${won(order.total)}</strong></div>
-        ${stamp}
         ${action}
       </article>
     `;
@@ -188,7 +187,7 @@ function render() {
 }
 
 function sheetListMessage() {
-  return '스프레드시트 목록을 아직 받지 못했습니다. Apps Script의 doGet이 주문 목록을 돌려주도록 저장한 뒤, 배포를 새 버전으로 올려 주세요.';
+  return '주문 목록을 불러오지 못했습니다. 이 컴퓨터에서 서버를 켠 뒤 http://127.0.0.1:3000/admin 을 여세요.';
 }
 
 async function readSheet(response) {
@@ -239,6 +238,8 @@ function toSheetOrder(row) {
     createdAt: row.createdAt,
     customerName: row.customerName,
     memo: row.memo || '',
+    department: row.department || '',
+    sauces: Array.isArray(row.sauces) ? row.sauces : [],
     items,
     total: Number(row.total) || items.reduce((sum, item) => sum + item.price * item.qty, 0),
     paymentMethod,
@@ -298,6 +299,22 @@ function showAddError(message) {
   els.addError.textContent = message || '';
 }
 
+function selectedAddSauces() {
+  return [...document.querySelectorAll('#composer [data-sauce][aria-pressed="true"]')].map((button) => button.dataset.sauce);
+}
+
+function clearAddSauces() {
+  document.querySelectorAll('#composer [data-sauce]').forEach((button) => {
+    button.setAttribute('aria-pressed', 'false');
+    button.classList.remove('active');
+  });
+}
+
+function memoForSheet(memo, sauces) {
+  const sauceLine = sauces.length ? `소스: ${sauces.join(', ')}` : '';
+  return [sauceLine, memo].filter(Boolean).join('\n');
+}
+
 function readQty() {
   els.addLines.querySelectorAll('[data-menu-qty]').forEach((input) => {
     const qty = Number(input.value);
@@ -339,9 +356,15 @@ async function submitComposer() {
   const items = state.menu
     .filter((item) => state.qty[item.id] > 0)
     .map((item) => ({ id: item.id, qty: state.qty[item.id] }));
+  const department = document.getElementById('addDepartment').value.replace(/[\r\n]+/g, ' ').trim();
   if (!customerName) {
     showAddError('주문자 이름을 입력해 주세요.');
     els.addName.focus();
+    return;
+  }
+  if (!department) {
+    showAddError('학과를 입력해 주세요.');
+    document.getElementById('addDepartment').focus();
     return;
   }
   if (!state.addMethod) {
@@ -356,15 +379,20 @@ async function submitComposer() {
   els.addSubmit.disabled = true;
   showAddError('');
   try {
+    const memo = els.addMemo.value.trim();
+    const sauces = selectedAddSauces();
     const data = await postSheet({
       customerName,
-      memo: els.addMemo.value,
+      department,
+      memo: memoForSheet(memo, sauces),
       paymentMethod: state.addMethod,
       items,
     });
     if (data.ok === false) throw new Error(data.error || '주문을 추가하지 못했습니다.');
     els.addName.value = '';
     els.addMemo.value = '';
+    document.getElementById('addDepartment').value = '';
+    clearAddSauces();
     state.addMethod = '';
     state.qty = {};
     closeComposer();
@@ -446,6 +474,12 @@ document.body.addEventListener('click', (event) => {
     showAddError('');
     renderDraft();
   }
+  const sauce = event.target.closest('#composer [data-sauce]');
+  if (sauce) {
+    const on = sauce.getAttribute('aria-pressed') !== 'true';
+    sauce.setAttribute('aria-pressed', String(on));
+    sauce.classList.toggle('active', on);
+  }
 });
 
 document.getElementById('toggleComposer').addEventListener('click', () => {
@@ -462,20 +496,16 @@ els.search.addEventListener('input', () => {
 document.getElementById('refresh').addEventListener('click', load);
 
 async function loadMenu() {
-  for (const url of ['menu.json', '/api/menu']) {
-    try {
-      const response = await fetch(url);
-      if (!response.ok) continue;
-      const menu = await response.json();
-      if (!Array.isArray(menu) || menu.length === 0) continue;
-      state.menu = menu;
-      if (!els.composer.hidden) renderDraft();
-      return;
-    } catch {
-      // 다음 주소에서 다시 시도합니다.
-    }
+  try {
+    const response = await fetch('menu.json');
+    if (!response.ok) return;
+    const menu = await response.json();
+    if (!Array.isArray(menu) || menu.length === 0) return;
+    state.menu = menu;
+    if (!els.composer.hidden) renderDraft();
+  } catch {
+    if (!els.composer.hidden) renderDraft();
   }
-  if (!els.composer.hidden) renderDraft();
 }
 
 function beginAdmin() {

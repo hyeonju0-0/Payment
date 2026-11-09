@@ -187,7 +187,23 @@ a { color: inherit; }
 .field span, .field small { font-size: 13px; }
 .field span { font-weight: 650; }
 .field small, .muted { color: var(--muted); }
-input, textarea, .search {
+.cart-foot .chips, .composer .chips { margin: 0; }
+.lookup {
+  margin: 0 0 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: white;
+  display: grid;
+  gap: 12px;
+}
+.lookup h2, .lookup p { margin: 0; }
+.lookup-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; }
+.lookup-form .btn { height: 44px; }
+@media (max-width: 700px) {
+  .lookup-form { grid-template-columns: 1fr; }
+}
+input:not([type="checkbox"]), textarea, .search {
   width: 100%;
   border: 1px solid var(--line);
   background: white;
