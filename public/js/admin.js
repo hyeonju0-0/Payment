@@ -1,4 +1,5 @@
 const won = (value) => `${new Intl.NumberFormat('ko-KR').format(value)}원`;
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyEO1bsy0nk00PT0qv0OnDfA4zqntMzKe9tABqsscA6dFjfLg8CmMRviteoXwhcqoRU/exec';
 
 const state = {
   orders: [],
@@ -12,6 +13,7 @@ const state = {
   qty: {},
   addMethod: '',
   adding: false,
+  account: null,
 };
 
 const els = {
@@ -101,12 +103,6 @@ function confirmCopy(action) {
   };
 }
 
-function statusPath(action) {
-  if (action === 'paid') return 'paid';
-  if (action === 'received') return 'received';
-  return 'refund';
-}
-
 function renderStats() {
   const pending = state.orders.filter((order) => order.status === 'pending');
   els.statPending.textContent = String(pending.length);
@@ -189,28 +185,52 @@ function render() {
   renderOrders();
 }
 
-function ordersUnavailable() {
-  return '주문 서버에 연결하지 못했습니다. 이 컴퓨터에서 서버를 켠 뒤 http://127.0.0.1:3000/admin 을 여세요.';
+function sheetListMessage() {
+  return '스프레드시트 목록을 아직 받지 못했습니다. Apps Script의 doGet이 주문 목록을 돌려주도록 저장한 뒤, 배포를 새 버전으로 올려 주세요.';
 }
 
-async function readJson(response) {
+async function readSheet(response) {
   const text = await response.text();
   try {
     return JSON.parse(text);
   } catch {
-    throw new Error(ordersUnavailable());
+    throw new Error(sheetListMessage());
   }
+}
+
+function toSheetOrder(row) {
+  const menuById = new Map(state.menu.map((item) => [item.id, item]));
+  const items = ['sotteok', 'chillis', 'sausage'].flatMap((id) => {
+    const qty = Number(row[id]) || 0;
+    if (qty < 1) return [];
+    const menu = menuById.get(id);
+    return [{ id, name: menu ? menu.name : id, price: menu ? menu.price : 0, qty }];
+  });
+  const paymentMethod = row.paymentMethod === 'cash' ? 'cash' : 'transfer';
+  return {
+    id: String(row.id),
+    createdAt: row.createdAt,
+    customerName: row.customerName,
+    memo: row.memo || '',
+    items,
+    total: Number(row.total) || items.reduce((sum, item) => sum + item.price * item.qty, 0),
+    paymentMethod,
+    status: row.status || 'pending',
+    account: paymentMethod === 'transfer' ? state.account : null,
+  };
 }
 
 async function load() {
   try {
-    const response = await fetch('/api/orders', { cache: 'no-store' });
-    const data = await readJson(response);
-    if (!response.ok) throw new Error(data.error || '주문을 불러오지 못했습니다.');
+    const response = await fetch(SHEET_URL, { cache: 'no-store' });
+    const data = await readSheet(response);
+    if (!response.ok || data.ok === false || !Array.isArray(data.orders)) {
+      throw new Error(data.error || sheetListMessage());
+    }
     const signature = JSON.stringify(data);
     if (signature === state.signature) return;
     state.signature = signature;
-    state.orders = data;
+    state.orders = data.orders.map(toSheetOrder);
     if (state.confirmId) {
       const current = data.find((order) => order.id === state.confirmId);
       const stale = !current
@@ -227,7 +247,7 @@ async function load() {
   } catch (error) {
     showError(error.message || '주문을 불러오지 못했습니다.');
     if (state.orders.length === 0) {
-      els.orders.innerHTML = `<p class="empty">${esc(ordersUnavailable())}</p>`;
+      els.orders.innerHTML = `<p class="empty">${esc(error.message || sheetListMessage())}</p>`;
     }
   }
 }
@@ -295,18 +315,17 @@ async function submitComposer() {
   els.addSubmit.disabled = true;
   showAddError('');
   try {
-    const response = await fetch('/api/orders', {
+    const response = await fetch(SHEET_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
         customerName,
         memo: els.addMemo.value,
         paymentMethod: state.addMethod,
-        source: 'admin',
         items,
       }),
     });
-    const data = await readJson(response);
+    const data = await readSheet(response);
     if (!response.ok) throw new Error(data.error || '주문을 추가하지 못했습니다.');
     els.addName.value = '';
     els.addMemo.value = '';
@@ -329,14 +348,21 @@ async function applyStatus(id) {
   state.busy = true;
   renderOrders();
   try {
-    const response = await fetch(`/api/orders/${id}/${statusPath(action)}`, { method: 'POST' });
-    const data = await readJson(response);
-    if (!response.ok) throw new Error(data.error || '상태를 바꾸지 못했습니다.');
+    const response = await fetch(SHEET_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'status',
+        id,
+        status: action === 'refund' ? 'refunded' : action,
+      }),
+    });
+    const data = await readSheet(response);
+    if (!response.ok || data.ok === false) throw new Error(data.error || '상태를 바꾸지 못했습니다.');
     state.confirmId = null;
     state.confirmAction = null;
-    const index = state.orders.findIndex((order) => order.id === id);
-    if (index >= 0) state.orders[index] = data;
-    state.signature = JSON.stringify(state.orders);
+    state.signature = '';
+    await load();
     showError('');
     render();
   } catch (error) {
@@ -430,6 +456,7 @@ loadMenu();
 fetch('meta.json')
   .then((response) => response.ok ? response.json() : null)
   .then((meta) => {
+    if (meta?.account?.bank && meta.account.number && meta.account.holder) state.account = meta.account;
     if (!meta?.shopName) return;
     document.title = `${meta.shopName} 주문 관리`;
     document.querySelectorAll('.brand-name').forEach((node) => { node.textContent = meta.shopName; });
