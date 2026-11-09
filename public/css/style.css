@@ -285,6 +285,30 @@ textarea { min-height: 68px; resize: vertical; }
 .receipt .btn { width: 100%; }
 .receipt .btn.ghost { margin-top: 0; }
 
+.admin-lock {
+  min-height: calc(100vh - var(--header));
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+.admin-lock[hidden] { display: none; }
+.admin-lock form {
+  width: min(360px, 100%);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 28px 24px;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 12px;
+}
+.admin-lock h1 { margin: 0; font-size: 32px; letter-spacing: -0.04em; }
+.admin-lock p { margin: 0; color: var(--muted); }
+.admin-lock input {
+  text-align: center;
+  font-size: 28px;
+  letter-spacing: 0.4em;
+}
 .admin { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 64px; }
 .admin-hero { margin-bottom: 22px; }
 .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }

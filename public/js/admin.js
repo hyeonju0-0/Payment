@@ -429,10 +429,6 @@ els.search.addEventListener('input', () => {
   renderOrders();
 });
 document.getElementById('refresh').addEventListener('click', load);
-window.setInterval(() => {
-  if (state.confirmId || state.busy || document.hidden) return;
-  load();
-}, 5000);
 
 async function loadMenu() {
   for (const url of ['menu.json', '/api/menu']) {
@@ -451,18 +447,64 @@ async function loadMenu() {
   if (!els.composer.hidden) renderDraft();
 }
 
-loadMenu();
+function beginAdmin() {
+  loadMenu();
+  fetch('meta.json')
+    .then((response) => response.ok ? response.json() : null)
+    .then((meta) => {
+      if (meta?.account?.bank && meta.account.number && meta.account.holder) state.account = meta.account;
+      if (!meta?.shopName) return;
+      document.title = `${meta.shopName} 주문 관리`;
+      document.querySelectorAll('.brand-name').forEach((node) => { node.textContent = meta.shopName; });
+      const seal = document.querySelector('.seal');
+      if (seal) seal.textContent = meta.shopName.slice(0, 1);
+    })
+    .catch(() => {});
+  load();
+  window.setInterval(() => {
+    if (state.confirmId || state.busy || document.hidden) return;
+    load();
+  }, 5000);
+}
 
-fetch('meta.json')
-  .then((response) => response.ok ? response.json() : null)
-  .then((meta) => {
-    if (meta?.account?.bank && meta.account.number && meta.account.holder) state.account = meta.account;
-    if (!meta?.shopName) return;
-    document.title = `${meta.shopName} 주문 관리`;
-    document.querySelectorAll('.brand-name').forEach((node) => { node.textContent = meta.shopName; });
-    const seal = document.querySelector('.seal');
-    if (seal) seal.textContent = meta.shopName.slice(0, 1);
-  })
-  .catch(() => {});
+const adminLock = document.getElementById('adminLock');
+const adminMain = document.getElementById('adminMain');
+const adminPinInput = document.getElementById('adminPin');
+const adminLockError = document.getElementById('adminLockError');
 
-load();
+document.getElementById('adminLockForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const pin = adminPinInput.value.trim();
+  if (!/^\d{4}$/.test(pin)) {
+    adminLockError.hidden = false;
+    adminLockError.textContent = '숫자 4자리를 입력해 주세요.';
+    adminPinInput.focus();
+    return;
+  }
+  adminLockError.hidden = true;
+  try {
+    const response = await fetch('/api/admin/unlock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    });
+    const text = await response.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch { data = null; }
+    if (!data) {
+      throw new Error('비밀번호 확인은 이 컴퓨터에서 서버를 켠 뒤 http://127.0.0.1:3000/admin 에서 할 수 있습니다.');
+    }
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || '비밀번호가 맞지 않습니다.');
+    }
+    adminLock.hidden = true;
+    adminMain.hidden = false;
+    beginAdmin();
+  } catch (error) {
+    adminLockError.hidden = false;
+    adminLockError.textContent = error.message || '비밀번호가 맞지 않습니다.';
+    adminPinInput.select();
+  }
+});
+
+adminPinInput.focus();

@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const mysql = require('mysql2/promise');
 const config = require('./config');
 
@@ -324,7 +325,27 @@ function serveStatic(res, filePath) {
   res.end(body);
 }
 
+function adminPinMatches(pin) {
+  const expected = String(localConfig.adminPin || '');
+  const given = String(pin || '');
+  if (!/^\d{4}$/.test(expected) || !/^\d{4}$/.test(given)) return false;
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(given));
+}
+
 async function handleApi(req, res, pathname) {
+  if (req.method === 'POST' && pathname === '/api/admin/unlock') {
+    if (!/^\d{4}$/.test(String(localConfig.adminPin || ''))) {
+      send(res, 500, { error: '관리자 비밀번호가 설정되어 있지 않습니다. config.local.js 의 adminPin에 숫자 4자리를 넣어 주세요.' });
+      return;
+    }
+    const body = await readBody(req);
+    if (!adminPinMatches(body.pin)) {
+      send(res, 401, { error: '비밀번호가 맞지 않습니다.' });
+      return;
+    }
+    send(res, 200, { ok: true });
+    return;
+  }
   if (req.method === 'GET' && pathname === '/api/meta') {
     send(res, 200, { shopName: config.shopName, tagline: config.tagline });
     return;

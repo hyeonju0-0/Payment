@@ -23,7 +23,18 @@
     <a class="header-link" href="./">주문 화면</a>
   </header>
 
-  <main class="admin">
+  <section class="admin-lock" id="adminLock">
+    <form id="adminLockForm">
+      <p class="eyebrow">관리자</p>
+      <h1>비밀번호</h1>
+      <p>숫자 4자리를 입력하면 관리자 화면으로 들어갑니다.</p>
+      <input id="adminPin" type="password" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="••••" aria-label="관리자 비밀번호 4자리" required>
+      <p class="form-error" id="adminLockError" hidden></p>
+      <button type="submit" class="btn primary">들어가기</button>
+    </form>
+  </section>
+
+  <main class="admin" id="adminMain" hidden>
     <div class="hero admin-hero">
       <p class="eyebrow">관리자</p>
       <h1>입금과 수령을 확인합니다</h1>
@@ -79,6 +90,6 @@
       <p class="empty">주문을 불러오는 중입니다.</p>
     </div>
   </main>
-  <script src="js/admin.js?v=20261109c"></script>
+  <script src="js/admin.js?v=20261109d"></script>
 </body>
 </html>
