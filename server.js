@@ -15,6 +15,7 @@ try {
 const PUBLIC_DIR = path.resolve(__dirname, 'public');
 const PORT = Number(process.env.PORT) || config.port || 3000;
 const FOOD_IDS = ['sotteok', 'chillis', 'sausage'];
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/15v24MlB6YiU13tjwvIi6VqaHjilhXXoEyyvFgSvsVZI/export?format=csv&gid=0';
 const dbPassword = process.env.DB_PASSWORD || localConfig.password || '';
 
 const MIME = {
@@ -332,6 +333,109 @@ function adminPinMatches(pin) {
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(given));
 }
 
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let cell = '';
+  let quoted = false;
+  const source = String(text).replace(/^\uFEFF/, '');
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+    if (quoted) {
+      if (char === '"') {
+        if (source[i + 1] === '"') {
+          cell += '"';
+          i += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        cell += char;
+      }
+    } else if (char === '"') {
+      quoted = true;
+    } else if (char === ',') {
+      row.push(cell);
+      cell = '';
+    } else if (char === '\n') {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else if (char !== '\r') {
+      cell += char;
+    }
+  }
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function sheetTime(value) {
+  const match = String(value).match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\s*(오전|오후)\s*(\d{1,2}):(\d{2}):(\d{2})/);
+  if (!match) return String(value || '');
+  let hour = Number(match[5]);
+  if (match[4] === '오후' && hour < 12) hour += 12;
+  if (match[4] === '오전' && hour === 12) hour = 0;
+  const pad = (number) => String(number).padStart(2, '0');
+  return `${match[1]}-${pad(match[2])}-${pad(match[3])}T${pad(hour)}:${match[6]}:${match[7]}+09:00`;
+}
+
+function sheetStatus(label) {
+  const text = String(label || '');
+  if (text.includes('환불')) return 'refunded';
+  if (text.includes('수령')) return 'received';
+  if (text.includes('완료')) return 'paid';
+  return 'pending';
+}
+
+function ordersFromCsv(csv) {
+  const rows = parseCsv(csv).filter((row) => row.some((cell) => String(cell).trim() !== ''));
+  if (rows.length === 0) return [];
+  const header = rows[0].map((cell) => cell.trim());
+  const column = (name) => {
+    const index = header.indexOf(name);
+    if (index < 0) throw httpError(502, `시트에 ${name} 열이 없습니다.`);
+    return index;
+  };
+  const time = column('시간');
+  const number = column('주문번호');
+  const name = column('이름');
+  const memo = column('요청사항');
+  const method = column('결제방법');
+  const sotteok = column('소떡소떡');
+  const chillis = column('칠리스');
+  const sausage = column('소시지');
+  const total = column('합계');
+  const status = column('상태');
+  return rows.slice(1).reverse().flatMap((row) => {
+    const customerName = String(row[name] || '').trim();
+    const id = String(row[number] || '').trim();
+    if (!customerName && !id) return [];
+    return [{
+      createdAt: sheetTime(row[time]),
+      id,
+      customerName,
+      memo: String(row[memo] || '').trim(),
+      paymentMethod: String(row[method] || '').includes('현금') ? 'cash' : 'transfer',
+      sotteok: Number(row[sotteok]) || 0,
+      chillis: Number(row[chillis]) || 0,
+      sausage: Number(row[sausage]) || 0,
+      total: Number(row[total]) || 0,
+      status: sheetStatus(row[status]),
+    }];
+  });
+}
+
+async function readSheetOrders() {
+  const response = await fetch(SHEET_CSV_URL, { redirect: 'follow' });
+  if (!response.ok) throw httpError(502, '스프레드시트를 읽지 못했습니다.');
+  const orders = ordersFromCsv(await response.text());
+  return { ok: true, orders };
+}
+
 async function handleApi(req, res, pathname) {
   if (req.method === 'POST' && pathname === '/api/admin/unlock') {
     if (!/^\d{4}$/.test(String(localConfig.adminPin || ''))) {
@@ -344,6 +448,10 @@ async function handleApi(req, res, pathname) {
       return;
     }
     send(res, 200, { ok: true });
+    return;
+  }
+  if (req.method === 'GET' && pathname === '/api/sheet-orders') {
+    send(res, 200, await readSheetOrders());
     return;
   }
   if (req.method === 'GET' && pathname === '/api/meta') {

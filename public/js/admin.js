@@ -256,7 +256,7 @@ async function load() {
   state.loading = true;
   if (refreshButton) refreshButton.textContent = '불러오는 중';
   try {
-    const response = await fetch(`${SHEET_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    const response = await fetch(`/api/sheet-orders?t=${Date.now()}`, { cache: 'no-store' });
     const data = await readSheet(response);
     if (!response.ok || data.ok === false || !Array.isArray(data.orders)) {
       throw new Error(data.error || sheetListMessage());
